@@ -661,16 +661,23 @@ kube::golang::build_some_binaries() {
         uncovered+=("${package}")
       fi
     done
+
     if [[ "${#uncovered[@]}" != 0 ]]; then
       V=2 kube::log::info "Building ${uncovered[*]} without coverage..."
       go install "${build_args[@]}" "${uncovered[@]}"
     else
       V=2 kube::log::info "Nothing to build without coverage."
-     fi
-   else
+    fi
+  else
+    echo ============================== go install
+    ## echo "${build_args[@]}" === "$@"
     V=2 kube::log::info "Coverage is disabled."
+    ## 当前pwd值为 /home/project/kubernetes/_output/local/go/src/k8s.io/kubernetes
+    ## GOMOD=""
+    ## GOPATH="/home/project/kubernetes/_output/local/go"
+    ## GOCACHE="/home/project/kubernetes/_output/local/go/cache"
     go install "${build_args[@]}" "$@"
-   fi
+  fi
 }
 
 kube::golang::build_binaries_for_platform() {
@@ -681,6 +688,8 @@ kube::golang::build_binaries_for_platform() {
   local -a tests=()
 
   V=2 kube::log::info "Env for ${platform}: GOOS=${GOOS-} GOARCH=${GOARCH-} GOROOT=${GOROOT-} CGO_ENABLED=${CGO_ENABLED-} CC=${CC-}"
+  echo "======================= in kube::golang::build_binaries_for_platform()"
+  echo "Env for ${platform}: GOOS=${GOOS-} GOARCH=${GOARCH-} GOROOT=${GOROOT-} CGO_ENABLED=${CGO_ENABLED-} CC=${CC-}"
 
   for binary in "${binaries[@]}"; do
     if [[ "${binary}" =~ ".test"$ ]]; then
@@ -691,7 +700,6 @@ kube::golang::build_binaries_for_platform() {
       nonstatics+=("${binary}")
     fi
   done
-
   local -a build_args
   if [[ "${#statics[@]}" != 0 ]]; then
     build_args=(
@@ -711,6 +719,7 @@ kube::golang::build_binaries_for_platform() {
       -asmflags "${goasmflags:-}"
       -ldflags "${goldflags:-}"
     )
+    echo "===================== nonstatics: ${nonstatics[@]}"
     kube::golang::build_some_binaries "${nonstatics[@]}"
   fi
 
@@ -847,6 +856,7 @@ kube::golang::build_binaries() {
       exit ${fails}
     else
       for platform in "${platforms[@]}"; do
+        echo "==================================== in kube::golang::build_binaries()"
         kube::log::status "Building go targets for ${platform}:" "${targets[@]}"
         (
           kube::golang::set_platform_envs "${platform}"
