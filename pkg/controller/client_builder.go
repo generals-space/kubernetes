@@ -41,6 +41,10 @@ import (
 	"k8s.io/kubernetes/pkg/serviceaccount"
 )
 
+// ControllerClientBuilder 用于创建restclient与clientset对象.
+// 我想最重要的应该是作为全局用户权限的限制, 使各组件的权限被独立分隔.
+// 在controller manager代码中, 很多函数都是通过builder即时创建client, 再进行操作的...
+// 暂时还不明白这么做的原因.
 // ControllerClientBuilder allows you to get clients and configs for controllers
 // Please note a copy also exists in staging/src/k8s.io/cloud-provider/cloud.go
 // TODO: Extract this into a separate controller utilities repo (issues/68947)
@@ -51,12 +55,15 @@ type ControllerClientBuilder interface {
 	ClientOrDie(name string) clientset.Interface
 }
 
-// SimpleControllerClientBuilder returns a fixed client with different user agents
+// SimpleControllerClientBuilder 实现了ControllerClientBuilder接口.
+// returns a fixed client with different user agents
 type SimpleControllerClientBuilder struct {
 	// ClientConfig is a skeleton config to clone and use as the basis for each controller client
 	ClientConfig *restclient.Config
 }
 
+// Config ...
+// caller: ConfigOrDie(), Client(), ClientOrDie()
 func (b SimpleControllerClientBuilder) Config(name string) (*restclient.Config, error) {
 	clientConfig := *b.ClientConfig
 	return restclient.AddUserAgent(&clientConfig, name), nil
@@ -105,7 +112,8 @@ type SAControllerClientBuilder struct {
 	Namespace string
 }
 
-// config returns a complete clientConfig for constructing clients.  This is separate in anticipation of composition
+// Config returns a complete clientConfig for constructing clients. 
+// This is separate in anticipation of composition
 // which means that not all clientsets are known here
 func (b SAControllerClientBuilder) Config(name string) (*restclient.Config, error) {
 	sa, err := getOrCreateServiceAccount(b.CoreClient, b.Namespace, name)

@@ -1,0 +1,37 @@
+## 路径 /usr/lib/systemd/system/controller-manager.service 
+## 注意: 本文件中的注释必须放在行首才有效, 否则文件格式将不合法.
+[Unit]
+Description=Kubernetes Controller Manager
+Documentation=https://github.com/kubernetes/kubernetes
+[Service]
+## 参数解释
+## `master`与`kubeconfig`任选其一即可.
+## --master=172.32.100.71:8080 
+## bind-address 值可以暴露健康检查接口 /healthz
+
+ExecStart=/usr/local/kubernetes/bin/kube-controller-manager \
+--kubeconfig=/etc/kubernetes/controller-manager.conf \
+--authentication-kubeconfig=/etc/kubernetes/controller-manager.conf \
+--authorization-kubeconfig=/etc/kubernetes/controller-manager.conf \
+--bind-address=127.0.0.1 \
+--allocate-node-cidrs=true \
+--node-cidr-mask-size=24 \
+--cluster-cidr=10.254.0.0/16 \
+--service-cluster-ip-range=10.96.0.0/12 \
+--root-ca-file=/etc/kubernetes/pki/ca.crt \
+--cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt \
+--cluster-signing-key-file=/etc/kubernetes/pki/ca.key \
+--service-account-private-key-file=/etc/kubernetes/pki/sa.key \
+--client-ca-file=/etc/kubernetes/pki/ca.crt \
+--requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt \
+--controllers=*,bootstrapsigner,tokencleaner \
+--leader-elect=true \
+--use-service-account-credentials=true \
+--logtostderr=true \
+--v=4 \
+--log-file=/var/log/kube-controller-manager.log
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

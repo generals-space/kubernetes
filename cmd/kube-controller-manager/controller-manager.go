@@ -14,10 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// The controller manager is responsible for monitoring replication
-// controllers, and creating corresponding pods to achieve the desired
-// state.  It uses the API to listen for new controllers and to create/delete
-// pods.
+// The controller manager is responsible for monitoring replication controllers, 
+// and creating corresponding pods to achieve the desired state. 
+// It uses the API to listen for new controllers and to create/delete pods.
+// controller manager 用于监控 replication controllers, 并创建相关的pod, 使其达到rc期望的状态.
+// 提供了API监控新的controller, 与增删pod的操作.
 package main
 
 import (

@@ -78,13 +78,13 @@ const (
 	ConfigzName = "kubecontrollermanager.config.k8s.io"
 )
 
-// ControllerLoopMode is the kube-controller-manager's mode of running controller loops that are cloud provider dependent
+// ControllerLoopMode is the kcm's mode of running controller loops that are cloud provider dependent
 type ControllerLoopMode int
 
 const (
-	// IncludeCloudLoops means the kube-controller-manager include the controller loops that are cloud provider dependent
+	// IncludeCloudLoops means the kcm include the controller loops that are cloud provider dependent
 	IncludeCloudLoops ControllerLoopMode = iota
-	// ExternalLoops means the kube-controller-manager exclude the controller loops that are cloud provider dependent
+	// ExternalLoops means the kcm exclude the controller loops that are cloud provider dependent
 	ExternalLoops
 )
 
@@ -114,7 +114,7 @@ controller, and serviceaccounts controller.`,
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
-
+			// 这里(Run())是执行入口
 			if err := Run(c.Complete(), wait.NeverStop); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
@@ -145,9 +145,9 @@ controller, and serviceaccounts controller.`,
 	return cmd
 }
 
-// ResyncPeriod returns a function which generates a duration each time it is
-// invoked; this is so that multiple controllers don't get into lock-step and all
-// hammer the apiserver with list requests simultaneously.
+// ResyncPeriod returns a function which generates a duration each time it is invoked; 
+// this is so that multiple controllers don't get into lock-step 
+// and all hammer the apiserver with list requests simultaneously.
 func ResyncPeriod(c *config.CompletedConfig) func() time.Duration {
 	return func() time.Duration {
 		factor := rand.Float64() + 1
@@ -155,7 +155,9 @@ func ResyncPeriod(c *config.CompletedConfig) func() time.Duration {
 	}
 }
 
-// Run runs the KubeControllerManagerOptions.  This should never exit.
+// Run runs the KubeControllerManagerOptions. This should never exit.
+// caller: NewControllerManagerCommand()
+// @param stopCh: wait.NeverStop, 这本来就是一个预置的只读channel.
 func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v", version.Get())
@@ -193,12 +195,17 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 			return err
 		}
 	}
-
+	// 在分布式资源锁中执行此函数.
+	// 注意, 只有成功获得锁的实例才可执行.
 	run := func(ctx context.Context) {
 		rootClientBuilder := controller.SimpleControllerClientBuilder{
+			// 这里已经算是闭包了
 			ClientConfig: c.Kubeconfig,
 		}
+		// client builder用于表示
 		var clientBuilder controller.ControllerClientBuilder
+		// `--use-service-account-credentials`参数, 默认应该是false.
+		// 如果为true, 则需要提供`--service-account-private-key-file`选项.
 		if c.ComponentConfig.KubeCloudShared.UseServiceAccountCredentials {
 			if len(c.ComponentConfig.SAController.ServiceAccountKeyFile) == 0 {
 				// It's possible another controller process is creating the tokens for us.
@@ -208,12 +215,15 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 			if shouldTurnOnDynamicClient(c.Client) {
 				klog.V(1).Infof("using dynamic client builder")
-				//Dynamic builder will use TokenRequest feature and refresh service account token periodically
+				// Dynamic builder will use TokenRequest feature 
+				// and refresh service account token periodically
 				clientBuilder = controller.NewDynamicClientBuilder(
 					restclient.AnonymousClientConfig(c.Kubeconfig),
 					c.Client.CoreV1(),
-					"kube-system")
+					"kube-system",
+				)
 			} else {
+				// 默认使用legacy client
 				klog.V(1).Infof("using legacy client builder")
 				clientBuilder = controller.SAControllerClientBuilder{
 					ClientConfig:         restclient.AnonymousClientConfig(c.Kubeconfig),
@@ -225,13 +235,28 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		} else {
 			clientBuilder = rootClientBuilder
 		}
-		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
+		controllerContext, err := CreateControllerContext(
+			c, 
+			rootClientBuilder, 
+			clientBuilder, 
+			ctx.Done(),
+		)
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
-		saTokenControllerInitFunc := serviceAccountTokenControllerStarter{rootClientBuilder: rootClientBuilder}.startServiceAccountTokenController
+		saTokenCtlStarter := serviceAccountTokenControllerStarter{
+			rootClientBuilder: rootClientBuilder,
+		}
+		// 只取一个方法, saTokenCtlStarter却不选择只创建空结构, 
+		// 那肯定是因为该方法中使用到了上面定义的结构体成员 rootClientBuilder.
+		saTokenControllerInitFunc := saTokenCtlStarter.startServiceAccountTokenController
 
-		if err := StartControllers(controllerContext, saTokenControllerInitFunc, NewControllerInitializers(controllerContext.LoopMode), unsecuredMux); err != nil {
+		if err := StartControllers(
+			controllerContext, 
+			saTokenControllerInitFunc, 
+			NewControllerInitializers(controllerContext.LoopMode), 
+			unsecuredMux,
+		); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}
 
@@ -285,6 +310,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	panic("unreachable")
 }
 
+// ControllerContext 包含了kcm需要的各种资源对象的引用, 如client builder, informer factory等.
 // ControllerContext defines the context object for controller
 type ControllerContext struct {
 	// ClientBuilder will provide a client for this controller to use
@@ -334,7 +360,11 @@ type ControllerContext struct {
 
 // IsControllerEnabled checks if the context's controllers enabled or not
 func (c ControllerContext) IsControllerEnabled(name string) bool {
-	return genericcontrollermanager.IsControllerEnabled(name, ControllersDisabledByDefault, c.ComponentConfig.Generic.Controllers)
+	return genericcontrollermanager.IsControllerEnabled(
+		name, 
+		ControllersDisabledByDefault, 
+		c.ComponentConfig.Generic.Controllers,
+	)
 }
 
 // InitFunc is used to launch a particular controller.  It may run additional "should I activate checks".
@@ -346,10 +376,11 @@ type InitFunc func(ctx ControllerContext) (debuggingHandler http.Handler, enable
 func KnownControllers() []string {
 	ret := sets.StringKeySet(NewControllerInitializers(IncludeCloudLoops))
 
-	// add "special" controllers that aren't initialized normally.  These controllers cannot be initialized
-	// using a normal function.  The only known special case is the SA token controller which *must* be started
-	// first to ensure that the SA tokens for future controllers will exist.  Think very carefully before adding
-	// to this list.
+	// add "special" controllers that aren't initialized normally. 
+	// These controllers cannot be initialized using a normal function. 
+	// The only known special case is the SA token controller which *must* be started
+	// first to ensure that the SA tokens for future controllers will exist. 
+	// Think very carefully before adding to this list.
 	ret.Insert(
 		saTokenControllerName,
 	)
@@ -368,8 +399,12 @@ const (
 	saTokenControllerName = "serviceaccount-token"
 )
 
-// NewControllerInitializers is a public map of named controller groups (you can start more than one in an init func)
-// paired to their InitFunc.  This allows for structured downstream composition and subdivision.
+// NewControllerInitializers 返回一个key为kcm中包含的所有controller类型, val为ta们各自对应的初始化函数的map.
+// @param loopMode: 只影响service, route, cloud-node-lifecycle 3种controller的加载.
+// caller: Run(), KnownControllers().
+// NewControllerInitializers is a public map of named controller groups paired to their InitFunc. 
+// (you can start more than one in an init func)
+// This allows for structured downstream composition and subdivision.
 func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc {
 	controllers := map[string]InitFunc{}
 	controllers["endpoint"] = startEndpointController
@@ -418,6 +453,7 @@ func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc 
 // TODO: In general, any controller checking this needs to be dynamic so
 // users don't have to restart their controller manager if they change the apiserver.
 // Until we get there, the structure here needs to be exposed for the construction of a proper ControllerContext.
+// caller: CreateControllerContext()
 func GetAvailableResources(clientBuilder controller.ControllerClientBuilder) (map[schema.GroupVersionResource]bool, error) {
 	client := clientBuilder.ClientOrDie("controller-discovery")
 	discoveryClient := client.Discovery()
@@ -443,18 +479,27 @@ func GetAvailableResources(clientBuilder controller.ControllerClientBuilder) (ma
 	return allResources, nil
 }
 
-// CreateControllerContext creates a context struct containing references to resources needed by the
-// controllers such as the cloud provider and clientBuilder. rootClientBuilder is only used for
-// the shared-informers client and token controller.
-func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clientBuilder controller.ControllerClientBuilder, stop <-chan struct{}) (ControllerContext, error) {
+// CreateControllerContext ...
+// @param rootClientBuilder: 只用于创建shared informer和token controller...???
+// CreateControllerContext creates a context struct containing references to resources needed
+// by the controllers such as the cloud provider and clientBuilder.
+// rootClientBuilder is only used for the shared-informers client and token controller.
+func CreateControllerContext(
+	s *config.CompletedConfig,
+	rootClientBuilder, clientBuilder controller.ControllerClientBuilder,
+	stopCh <-chan struct{},
+) (ControllerContext, error) {
+	// versionedClient为clientset对象, sharedInformers为kube informer对象.
 	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
 	metadataClient := metadata.NewForConfigOrDie(rootClientBuilder.ConfigOrDie("metadata-informers"))
 	metadataInformers := metadatainformer.NewSharedInformerFactory(metadataClient, ResyncPeriod(s)())
 
-	// If apiserver is not running we should wait for some time and fail only then. This is particularly
-	// important when we start apiserver and controller manager at the same time.
+	// 如果发现apiserver未运行, 则先等待一些时间.
+	// 在apiserver与controller manager同时启动时, 等待是很有必要的. 这里超时10秒.
+	// If apiserver is not running we should wait for some time and fail only then.
+	// This is particularly important when we start apiserver and controller manager at the same time.
 	if err := genericcontrollermanager.WaitForAPIServer(versionedClient, 10*time.Second); err != nil {
 		return ControllerContext{}, fmt.Errorf("failed to wait for apiserver being healthy: %v", err)
 	}
@@ -465,15 +510,20 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 	restMapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedClient)
 	go wait.Until(func() {
 		restMapper.Reset()
-	}, 30*time.Second, stop)
+	}, 30*time.Second, stopCh)
 
 	availableResources, err := GetAvailableResources(rootClientBuilder)
 	if err != nil {
 		return ControllerContext{}, err
 	}
 
-	cloud, loopMode, err := createCloudProvider(s.ComponentConfig.KubeCloudShared.CloudProvider.Name, s.ComponentConfig.KubeCloudShared.ExternalCloudVolumePlugin,
-		s.ComponentConfig.KubeCloudShared.CloudProvider.CloudConfigFile, s.ComponentConfig.KubeCloudShared.AllowUntaggedCloud, sharedInformers)
+	cloud, loopMode, err := createCloudProvider(
+		s.ComponentConfig.KubeCloudShared.CloudProvider.Name,
+		s.ComponentConfig.KubeCloudShared.ExternalCloudVolumePlugin,
+		s.ComponentConfig.KubeCloudShared.CloudProvider.CloudConfigFile,
+		s.ComponentConfig.KubeCloudShared.AllowUntaggedCloud,
+		sharedInformers,
+	)
 	if err != nil {
 		return ControllerContext{}, err
 	}
@@ -487,7 +537,7 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 		AvailableResources:              availableResources,
 		Cloud:                           cloud,
 		LoopMode:                        loopMode,
-		Stop:                            stop,
+		Stop:                            stopCh,
 		InformersStarted:                make(chan struct{}),
 		ResyncPeriod:                    ResyncPeriod(s),
 	}
@@ -495,9 +545,19 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 }
 
 // StartControllers starts a set of controllers with a specified ControllerContext
-func StartControllers(ctx ControllerContext, startSATokenController InitFunc, controllers map[string]InitFunc, unsecuredMux *mux.PathRecorderMux) error {
-	// Always start the SA token controller first using a full-power client, since it needs to mint tokens for the rest
-	// If this fails, just return here and fail since other controllers won't be able to get credentials.
+// @param startSATokenController: 传入了`serviceAccountTokenControllerStarter`对象的`startServiceAccountTokenController()`方法
+// caller: Run()
+func StartControllers(
+	ctx ControllerContext, 
+	startSATokenController InitFunc, 
+	controllers map[string]InitFunc, 
+	unsecuredMux *mux.PathRecorderMux,
+) error {
+	// Always start the SA token controller first using a full-power client, 
+	// since it needs to mint tokens for the rest If this fails, 
+	// just return here and fail since other controllers won't be able to get credentials.
+	// 先用全权限client创建SA token controller, ta需要的权限最少的意思...???
+	// 如果这里失败了, 直接返回错误即可, 反正其他controller的验证也通不过.
 	if _, _, err := startSATokenController(ctx); err != nil {
 		return err
 	}
@@ -526,6 +586,7 @@ func StartControllers(ctx ControllerContext, startSATokenController InitFunc, co
 			klog.Warningf("Skipping %q", controllerName)
 			continue
 		}
+		// 这一部分不需要看了...
 		if debugHandler != nil && unsecuredMux != nil {
 			basePath := "/debug/controllers/" + controllerName
 			unsecuredMux.UnlistedHandle(basePath, http.StripPrefix(basePath, debugHandler))

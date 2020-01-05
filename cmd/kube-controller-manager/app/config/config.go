@@ -26,6 +26,7 @@ import (
 
 // Config is the main context object for the controller manager.
 type Config struct {
+	// ComponentConfig controller manager程序所需的参数, config还有其他的配置.
 	ComponentConfig kubectrlmgrconfig.KubeControllerManagerConfiguration
 
 	SecureServing *apiserver.SecureServingInfo
@@ -55,6 +56,7 @@ type completedConfig struct {
 }
 
 // CompletedConfig same as Config, just to swap private object.
+// 调用者无法直接使用其成员, 只能调用Complete()方法.
 type CompletedConfig struct {
 	// Embed a private pointer that cannot be instantiated outside of this package.
 	*completedConfig
