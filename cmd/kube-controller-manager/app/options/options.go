@@ -350,8 +350,15 @@ func (s *KubeControllerManagerOptions) ApplyTo(c *kubecontrollerconfig.Config) e
 	return nil
 }
 
-// Validate is used to validate the options and config before launching the controller manager
-func (s *KubeControllerManagerOptions) Validate(allControllers []string, disabledByDefaultControllers []string) error {
+// Validate receiver中包含各种controller的option对象, 这个函数基本上就是遍历这些对象, 依次调用ta们的Validate()方法.
+// 传入的两个参数只用于receiver的Generic成员对象的Validate()方法.
+// caller: s.Config()
+// Validate is used to validate the options and config 
+// before launching the controller manager
+func (s *KubeControllerManagerOptions) Validate(
+	allControllers []string, 
+	disabledByDefaultControllers []string,
+) error {
 	var errs []error
 
 	errs = append(errs, s.Generic.Validate(allControllers, disabledByDefaultControllers)...)
@@ -388,6 +395,9 @@ func (s *KubeControllerManagerOptions) Validate(allControllers []string, disable
 	return utilerrors.NewAggregate(errs)
 }
 
+// Config 将options对象转换为Config对象. 其实options对象直接包含了config对象, 转换时做一些构造和验证工作.
+// @param allControllers: 当前kcm可用的所有controller名称(如endpoint, namespace). 
+// 			可在NewControllerInitializers()函数中查看
 // Config return a controller manager config objective
 func (s KubeControllerManagerOptions) Config(allControllers []string, disabledByDefaultControllers []string) (*kubecontrollerconfig.Config, error) {
 	if err := s.Validate(allControllers, disabledByDefaultControllers); err != nil {

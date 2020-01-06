@@ -90,7 +90,7 @@ const (
 
 // NewControllerManagerCommand creates a *cobra.Command object with default parameters
 func NewControllerManagerCommand() *cobra.Command {
-	s, err := options.NewKubeControllerManagerOptions()
+	kcmOptions, err := options.NewKubeControllerManagerOptions()
 	if err != nil {
 		klog.Fatalf("unable to initialize command options: %v", err)
 	}
@@ -109,13 +109,13 @@ controller, and serviceaccounts controller.`,
 			verflag.PrintAndExitIfRequested()
 			utilflag.PrintFlags(cmd.Flags())
 
-			c, err := s.Config(KnownControllers(), ControllersDisabledByDefault.List())
+			kcmConfig, err := kcmOptions.Config(KnownControllers(), ControllersDisabledByDefault.List())
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
 			// 这里(Run())是执行入口
-			if err := Run(c.Complete(), wait.NeverStop); err != nil {
+			if err := Run(kcmConfig.Complete(), wait.NeverStop); err != nil {
 				fmt.Fprintf(os.Stderr, "%v\n", err)
 				os.Exit(1)
 			}
@@ -123,7 +123,7 @@ controller, and serviceaccounts controller.`,
 	}
 
 	fs := cmd.Flags()
-	namedFlagSets := s.Flags(KnownControllers(), ControllersDisabledByDefault.List())
+	namedFlagSets := kcmOptions.Flags(KnownControllers(), ControllersDisabledByDefault.List())
 	verflag.AddFlags(namedFlagSets.FlagSet("global"))
 	globalflag.AddGlobalFlags(namedFlagSets.FlagSet("global"), cmd.Name())
 	registerLegacyGlobalFlags(namedFlagSets)
@@ -325,6 +325,7 @@ type ControllerContext struct {
 	// would become GenericInformerFactory and take a dynamic client.
 	ObjectOrMetadataInformerFactory controller.InformerFactory
 
+	// ComponentConfig 包含各种 controller 的配置对象.
 	// ComponentConfig provides access to init options for a given controller
 	ComponentConfig kubectrlmgrconfig.KubeControllerManagerConfiguration
 
@@ -358,8 +359,11 @@ type ControllerContext struct {
 	ResyncPeriod func() time.Duration
 }
 
+// IsControllerEnabled 判断context结构中的controller是否为enabled.
 // IsControllerEnabled checks if the context's controllers enabled or not
 func (c ControllerContext) IsControllerEnabled(name string) bool {
+	// 判断c.ComponentConfig.Generic.Controllers中的名为name的controller是否为enabled
+	// 其实就是一个遍历, 然后比较的过程.
 	return genericcontrollermanager.IsControllerEnabled(
 		name, 
 		ControllersDisabledByDefault, 
@@ -367,13 +371,16 @@ func (c ControllerContext) IsControllerEnabled(name string) bool {
 	)
 }
 
-// InitFunc is used to launch a particular controller.  It may run additional "should I activate checks".
+// InitFunc is used to launch a particular controller. 
+// It may run additional "should I activate checks".
 // Any error returned will cause the controller process to `Fatal`
 // The bool indicates whether the controller was enabled.
 type InitFunc func(ctx ControllerContext) (debuggingHandler http.Handler, enabled bool, err error)
 
+// KnownControllers 返回所有已知controller名称数组, 还insert了特殊的sa token controller的名称.
 // KnownControllers returns all known controllers's name
 func KnownControllers() []string {
+	// NewControllerInitializers返回的是一个map, 而StringKeySet把map中的键构造成一个set
 	ret := sets.StringKeySet(NewControllerInitializers(IncludeCloudLoops))
 
 	// add "special" controllers that aren't initialized normally. 
@@ -381,6 +388,8 @@ func KnownControllers() []string {
 	// The only known special case is the SA token controller which *must* be started
 	// first to ensure that the SA tokens for future controllers will exist. 
 	// Think very carefully before adding to this list.
+	// sa token controller比较特殊, 无法通过常规函数进行初始化.
+	// 这也是目前已知唯一的特殊controller, 需要在其他controller启动之前启动.
 	ret.Insert(
 		saTokenControllerName,
 	)
@@ -388,6 +397,7 @@ func KnownControllers() []string {
 	return ret.List()
 }
 
+// ControllersDisabledByDefault 默认为disabled的controller集合.
 // ControllersDisabledByDefault is the set of controllers which is disabled by default
 var ControllersDisabledByDefault = sets.NewString(
 	"bootstrapsigner",
@@ -400,6 +410,7 @@ const (
 )
 
 // NewControllerInitializers 返回一个key为kcm中包含的所有controller类型, val为ta们各自对应的初始化函数的map.
+// @note: 貌似没有pod, 只有一个podgc?
 // @param loopMode: 只影响service, route, cloud-node-lifecycle 3种controller的加载.
 // caller: Run(), KnownControllers().
 // NewControllerInitializers is a public map of named controller groups paired to their InitFunc. 
@@ -479,7 +490,7 @@ func GetAvailableResources(clientBuilder controller.ControllerClientBuilder) (ma
 	return allResources, nil
 }
 
-// CreateControllerContext ...
+// CreateControllerContext context中包含了各种builder, client和informer对象.
 // @param rootClientBuilder: 只用于创建shared informer和token controller...???
 // CreateControllerContext creates a context struct containing references to resources needed
 // by the controllers such as the cloud provider and clientBuilder.
@@ -544,9 +555,10 @@ func CreateControllerContext(
 	return ctx, nil
 }
 
-// StartControllers starts a set of controllers with a specified ControllerContext
-// @param startSATokenController: 传入了`serviceAccountTokenControllerStarter`对象的`startServiceAccountTokenController()`方法
+// StartControllers 使用ctx(遍历)启动controllers中所有控制器, startSATokenController单独启动.
+// 调用所有controller各自的init方法.
 // caller: Run()
+// StartControllers starts a set of controllers with a specified ControllerContext
 func StartControllers(
 	ctx ControllerContext, 
 	startSATokenController InitFunc, 
@@ -558,6 +570,8 @@ func StartControllers(
 	// just return here and fail since other controllers won't be able to get credentials.
 	// 先用全权限client创建SA token controller, ta需要的权限最少的意思...???
 	// 如果这里失败了, 直接返回错误即可, 反正其他controller的验证也通不过.
+	// startSATokenController 实际值为本文件中 serviceAccountTokenControllerStarter 结构的
+	// startServiceAccountTokenController()方法.
 	if _, _, err := startSATokenController(ctx); err != nil {
 		return err
 	}
@@ -586,7 +600,7 @@ func StartControllers(
 			klog.Warningf("Skipping %q", controllerName)
 			continue
 		}
-		// 这一部分不需要看了...
+		// 这一部分不需要看...
 		if debugHandler != nil && unsecuredMux != nil {
 			basePath := "/debug/controllers/" + controllerName
 			unsecuredMux.UnlistedHandle(basePath, http.StripPrefix(basePath, debugHandler))
@@ -598,13 +612,20 @@ func StartControllers(
 	return nil
 }
 
-// serviceAccountTokenControllerStarter is special because it must run first to set up permissions for other controllers.
-// It cannot use the "normal" client builder, so it tracks its own. It must also avoid being included in the "normal"
+// serviceAccountTokenControllerStarter 比较特殊, ta必须先启动, 给其他controller提供权限.
+// 这个任务无法使用常规的 client builder 对象完成, 只能手动读取sa密钥对以创建 sa token controller.
+// 不能包含在常规的初始化map中(NewControllerInitializers()函数中可查看), 
+// 需要先于这个map中初始化函数执行(StartControllers()函数中的确是这样做的)
+// serviceAccountTokenControllerStarter is special 
+// because it must run first to set up permissions for other controllers.
+// It cannot use the "normal" client builder, so it tracks its own. 
+// It must also avoid being included in the "normal"
 // init map so that it can always run first.
 type serviceAccountTokenControllerStarter struct {
 	rootClientBuilder controller.ControllerClientBuilder
 }
 
+// caller: StartControllers()
 func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController(ctx ControllerContext) (http.Handler, bool, error) {
 	if !ctx.IsControllerEnabled(saTokenControllerName) {
 		klog.Warningf("%q is disabled", saTokenControllerName)
@@ -653,6 +674,8 @@ func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController
 	return nil, true, nil
 }
 
+// readCA ioutil读取ca文件内容并返回
+// caller: startServiceAccountTokenController().
 func readCA(file string) ([]byte, error) {
 	rootCA, err := ioutil.ReadFile(file)
 	if err != nil {
