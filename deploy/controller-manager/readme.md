@@ -21,3 +21,5 @@ go run controller-manager.go \
 --v=4
 
 ```
+
+`kcm(kube-controller-manager)`在集群中以static pod形式存在, 没有相应的deployment, daemonset, statefulset或rs/rc之类的资源进行管理. 其配置文件在master节点的`/etc/kubernetes/manifests/kube-controller-manager.yaml`.

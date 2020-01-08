@@ -107,6 +107,7 @@ func GetNodeHostIP(node *v1.Node) (net.IP, error) {
 	return nil, fmt.Errorf("host IP unknown; known addresses: %v", addresses)
 }
 
+// GetNodeIP 通过client获取名为hostname的node节点的IP.
 // GetNodeIP returns the ip of node with the provided hostname
 // If required, wait for the node to be defined.
 func GetNodeIP(client clientset.Interface, hostname string) net.IP {

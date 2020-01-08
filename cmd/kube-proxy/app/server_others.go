@@ -54,6 +54,9 @@ import (
 	"k8s.io/klog"
 )
 
+// NewProxyServer 创建ProxyServer对象.
+// ProxyServer 还实现了 proxyRun 接口, Run()方法定义在 server.go 文件中.
+// caller: server.go -> Run()
 // NewProxyServer returns a new ProxyServer.
 func NewProxyServer(o *Options) (*ProxyServer, error) {
 	return newProxyServer(o.config, o.CleanupAndExit, o.master)
@@ -62,7 +65,8 @@ func NewProxyServer(o *Options) (*ProxyServer, error) {
 func newProxyServer(
 	config *proxyconfigapi.KubeProxyConfiguration,
 	cleanupAndExit bool,
-	master string) (*ProxyServer, error) {
+	master string,
+) (*ProxyServer, error) {
 
 	if config == nil {
 		return nil, errors.New("config is required")
@@ -98,6 +102,7 @@ func newProxyServer(
 		ipvsInterface = utilipvs.New(execer)
 	}
 
+	// 如果启动参数中指定了`--cleanup=true`, 可以清理iptables与ipvs规则然后退出.
 	// We omit creation of pretty much everything if we run in cleanup mode
 	if cleanupAndExit {
 		return &ProxyServer{
@@ -119,7 +124,10 @@ func newProxyServer(
 		return nil, err
 	}
 	eventBroadcaster := record.NewBroadcaster()
-	recorder := eventBroadcaster.NewRecorder(proxyconfigscheme.Scheme, v1.EventSource{Component: "kube-proxy", Host: hostname})
+	recorder := eventBroadcaster.NewRecorder(
+		proxyconfigscheme.Scheme, 
+		v1.EventSource{Component: "kube-proxy", Host: hostname},
+	)
 
 	nodeRef := &v1.ObjectReference{
 		Kind:      "Node",
@@ -131,20 +139,34 @@ func newProxyServer(
 	var healthzServer *healthcheck.HealthzServer
 	var healthzUpdater healthcheck.HealthzUpdater
 	if len(config.HealthzBindAddress) > 0 {
-		healthzServer = healthcheck.NewDefaultHealthzServer(config.HealthzBindAddress, 2*config.IPTables.SyncPeriod.Duration, recorder, nodeRef)
+		healthzServer = healthcheck.NewDefaultHealthzServer(
+			config.HealthzBindAddress,
+			2*config.IPTables.SyncPeriod.Duration,
+			recorder,
+			nodeRef,
+		)
 		healthzUpdater = healthzServer
 	}
 
 	var proxier proxy.Provider
 
-	proxyMode := getProxyMode(string(config.Mode), kernelHandler, ipsetInterface, iptables.LinuxKernelCompatTester{})
+	proxyMode := getProxyMode(
+		string(config.Mode), 
+		kernelHandler, 
+		ipsetInterface, 
+		iptables.LinuxKernelCompatTester{},
+	)
 	nodeIP := net.ParseIP(config.BindAddress)
-	if nodeIP.IsUnspecified() {
-		nodeIP = utilnode.GetNodeIP(client, hostname)
-		if nodeIP == nil {
-			return nil, fmt.Errorf("unable to get node IP for hostname %s", hostname)
+	/*
+		// 本地调试的时候可能需要将这里注释掉, 因为调试机可能不在集群中, GetNodeIP会出错.
+		// nodeIP 0.0.0.0吧
+		if nodeIP.IsUnspecified() {
+			nodeIP = utilnode.GetNodeIP(client, hostname)
+			if nodeIP == nil {
+				return nil, fmt.Errorf("unable to get node IP for hostname %s", hostname)
+			}
 		}
-	}
+	*/
 	if proxyMode == proxyModeIPTables {
 		klog.V(0).Info("Using iptables Proxier.")
 		if config.IPTables.MasqueradeBit == nil {
@@ -175,6 +197,7 @@ func newProxyServer(
 	} else if proxyMode == proxyModeIPVS {
 		klog.V(0).Info("Using ipvs Proxier.")
 		if utilfeature.DefaultFeatureGate.Enabled(features.IPv6DualStack) {
+			fmt.Println("================ utilfeature.DefaultFeatureGate enabled")
 			klog.V(0).Info("creating dualStackProxier for ipvs.")
 
 			// Create iptables handlers for both families, one is already created
@@ -208,6 +231,7 @@ func newProxyServer(
 				config.NodePortAddresses,
 			)
 		} else {
+			fmt.Println("================ utilfeature.DefaultFeatureGate disable")
 			proxier, err = ipvs.NewProxier(
 				iptInterface,
 				ipvsInterface,
@@ -317,6 +341,8 @@ func nodeIPTuple(bindAddress string) [2]net.IP {
 	return nodes
 }
 
+// getProxyMode 返回iptbales, ipvs或userspace.
+// caller: newProxyServer()
 func getProxyMode(proxyMode string, khandle ipvs.KernelHandler, ipsetver ipvs.IPSetVersioner, kcompat iptables.KernelCompatTester) string {
 	switch proxyMode {
 	case proxyModeUserspace:

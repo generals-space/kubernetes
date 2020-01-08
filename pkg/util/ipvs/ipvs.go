@@ -120,6 +120,7 @@ func (rs *RealServer) Equal(other *RealServer) bool {
 		rs.Port == other.Port
 }
 
+// GetRequiredIPVSModules 返回不同版本内核启动ipvs功能需要加载的模块列表
 // GetRequiredIPVSModules returns the required ipvs modules for the given linux kernel version.
 func GetRequiredIPVSModules(kernelVersion *version.Version) []string {
 	// "nf_conntrack_ipv4" has been removed since v4.19

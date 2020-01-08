@@ -22,64 +22,33 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	"os"
-	goruntime "runtime"
 	"strings"
-	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apiserver/pkg/server/healthz"
-	"k8s.io/apiserver/pkg/server/mux"
-	"k8s.io/apiserver/pkg/server/routes"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	"k8s.io/client-go/tools/record"
 	cliflag "k8s.io/component-base/cli/flag"
 	componentbaseconfig "k8s.io/component-base/config"
-	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/klog"
 	"k8s.io/kube-proxy/config/v1alpha1"
-	api "k8s.io/kubernetes/pkg/apis/core"
-	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/master/ports"
-	"k8s.io/kubernetes/pkg/proxy"
-	"k8s.io/kubernetes/pkg/proxy/apis"
 	kubeproxyconfig "k8s.io/kubernetes/pkg/proxy/apis/config"
 	proxyconfigscheme "k8s.io/kubernetes/pkg/proxy/apis/config/scheme"
 	"k8s.io/kubernetes/pkg/proxy/apis/config/validation"
-	"k8s.io/kubernetes/pkg/proxy/config"
-	"k8s.io/kubernetes/pkg/proxy/healthcheck"
-	"k8s.io/kubernetes/pkg/proxy/iptables"
-	"k8s.io/kubernetes/pkg/proxy/ipvs"
-	"k8s.io/kubernetes/pkg/proxy/userspace"
 	proxyutil "k8s.io/kubernetes/pkg/proxy/util"
-	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/util/filesystem"
 	utilflag "k8s.io/kubernetes/pkg/util/flag"
-	utilipset "k8s.io/kubernetes/pkg/util/ipset"
-	utiliptables "k8s.io/kubernetes/pkg/util/iptables"
-	utilipvs "k8s.io/kubernetes/pkg/util/ipvs"
-	"k8s.io/kubernetes/pkg/util/oom"
-	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/version/verflag"
-	"k8s.io/utils/exec"
 	utilpointer "k8s.io/utils/pointer"
 )
 
@@ -87,15 +56,9 @@ const (
 	proxyModeUserspace   = "userspace"
 	proxyModeIPTables    = "iptables"
 	proxyModeIPVS        = "ipvs"
-	proxyModeKernelspace = "kernelspace"
 )
 
-// proxyRun defines the interface to run a specified ProxyServer
-type proxyRun interface {
-	Run() error
-	CleanupAndExit() error
-}
-
+// Options 包含kube-proxy运行所需的配置Config对象, 也包含了命令行中不需要传入kube-proxy的一些flag选项.
 // Options contains everything necessary to create and run a proxy server.
 type Options struct {
 	// ConfigFile is the location of the proxy server's configuration file.
@@ -111,10 +74,13 @@ type Options struct {
 	WindowsService bool
 	// config is the proxy server's configuration object.
 	config *kubeproxyconfig.KubeProxyConfiguration
+	// watcher 是一个文件系统的监听器, 使用 fs notify 机制监测配置文件变动然后通知.
 	// watcher is used to watch on the update change of ConfigFile
 	watcher filesystem.FSWatcher
 	// proxyServer is the interface to run the proxy server
 	proxyServer proxyRun
+	// errCh proxyServer.Run()执行时, 或是watcher.Run()在监听配置文件变动及监听出现异常时, 
+	// 都可能出现错误, 这些错误都会被发送到errCh通道中.
 	// errCh is the channel that errors will be sent
 	errCh chan error
 
@@ -202,6 +168,7 @@ func NewOptions() *Options {
 	}
 }
 
+// Complete 填充所有必填选项.
 // Complete completes all the required options.
 func (o *Options) Complete() error {
 	if len(o.ConfigFile) == 0 && len(o.WriteConfigTo) == 0 {
@@ -230,9 +197,12 @@ func (o *Options) Complete() error {
 	return utilfeature.DefaultMutableFeatureGate.SetFromMap(o.config.FeatureGates)
 }
 
+// initWatcher 创建文件系统监听器, 监测配置文件变动.
 // Creates a new filesystem watcher and adds watches for the config file.
+// caller: o.Complete()
 func (o *Options) initWatcher() error {
 	fswatcher := filesystem.NewFsnotifyWatcher()
+	// 指定事件处理器, 在event或是error发生时, 调用ta们进行处理.
 	err := fswatcher.Init(o.eventHandler, o.errorHandler)
 	if err != nil {
 		return err
@@ -245,6 +215,8 @@ func (o *Options) initWatcher() error {
 	return nil
 }
 
+// errorHandler: 用于处理监听中出现文件变动的event事件(文件变动也会写入errCh通道).
+// caller: o.initWatcher() -> fswatcher.Init()
 func (o *Options) eventHandler(ent fsnotify.Event) {
 	eventOpIs := func(Op fsnotify.Op) bool {
 		return ent.Op&Op == Op
@@ -256,6 +228,8 @@ func (o *Options) eventHandler(ent fsnotify.Event) {
 	o.errCh <- nil
 }
 
+// errorHandler: 用于处理监听中出现的error事件
+// caller: o.initWatcher() -> fswatcher.Init()
 func (o *Options) errorHandler(err error) {
 	o.errCh <- err
 }
@@ -286,6 +260,7 @@ func (o *Options) Validate(args []string) error {
 	return nil
 }
 
+// Run 创建proxyServer, 并开始执行. runLoop()是实际的执行函数.
 // Run runs the specified ProxyServer.
 func (o *Options) Run() error {
 	defer close(o.errCh)
@@ -303,12 +278,16 @@ func (o *Options) Run() error {
 	}
 
 	o.proxyServer = proxyServer
+	// runLoop()会阻塞进程
 	return o.runLoop()
 }
 
+// runLoop 启动监听器监测配置文件变动, 同时运行proxyServer.
+// 在配置文件变动或是proxyServer运行出错就会返回error, 这应该会导致进程退出.
 // runLoop will watch on the update change of the proxy server's configuration file.
 // Return an error when updated
 func (o *Options) runLoop() error {
+	// 启动监听
 	if o.watcher != nil {
 		o.watcher.Run()
 	}
@@ -459,34 +438,14 @@ with the apiserver API to configure the proxy.`,
 	return cmd
 }
 
-// ProxyServer represents all the parameters required to start the Kubernetes proxy server. All
-// fields are required.
-type ProxyServer struct {
-	Client                 clientset.Interface
-	EventClient            v1core.EventsGetter
-	IptInterface           utiliptables.Interface
-	IpvsInterface          utilipvs.Interface
-	IpsetInterface         utilipset.Interface
-	execer                 exec.Interface
-	Proxier                proxy.Provider
-	Broadcaster            record.EventBroadcaster
-	Recorder               record.EventRecorder
-	ConntrackConfiguration kubeproxyconfig.KubeProxyConntrackConfiguration
-	Conntracker            Conntracker // if nil, ignored
-	ProxyMode              string
-	NodeRef                *v1.ObjectReference
-	CleanupIPVS            bool
-	MetricsBindAddress     string
-	EnableProfiling        bool
-	UseEndpointSlices      bool
-	OOMScoreAdj            *int32
-	ConfigSyncPeriod       time.Duration
-	HealthzServer          *healthcheck.HealthzServer
-}
-
-// createClients creates a kube client and an event client from the given config and masterOverride.
+// createClients 使用InClusterConfig()创建clientset客户端及event客户端.
+// createClients creates a kube client and an event client
+// from the given config and masterOverride.
 // TODO remove masterOverride when CLI flags are removed.
-func createClients(config componentbaseconfig.ClientConnectionConfiguration, masterOverride string) (clientset.Interface, v1core.EventsGetter, error) {
+func createClients(
+	config componentbaseconfig.ClientConnectionConfiguration, 
+	masterOverride string,
+) (clientset.Interface, v1core.EventsGetter, error) {
 	var kubeConfig *rest.Config
 	var err error
 
@@ -520,170 +479,4 @@ func createClients(config componentbaseconfig.ClientConnectionConfiguration, mas
 	}
 
 	return client, eventClient.CoreV1(), nil
-}
-
-// Run runs the specified ProxyServer.  This should never exit (unless CleanupAndExit is set).
-// TODO: At the moment, Run() cannot return a nil error, otherwise it's caller will never exit. Update callers of Run to handle nil errors.
-func (s *ProxyServer) Run() error {
-	// To help debugging, immediately log version
-	klog.Infof("Version: %+v", version.Get())
-
-	// TODO(vmarmol): Use container config for this.
-	var oomAdjuster *oom.OOMAdjuster
-	if s.OOMScoreAdj != nil {
-		oomAdjuster = oom.NewOOMAdjuster()
-		if err := oomAdjuster.ApplyOOMScoreAdj(0, int(*s.OOMScoreAdj)); err != nil {
-			klog.V(2).Info(err)
-		}
-	}
-
-	if s.Broadcaster != nil && s.EventClient != nil {
-		s.Broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: s.EventClient.Events("")})
-	}
-
-	// Start up a healthz server if requested
-	if s.HealthzServer != nil {
-		s.HealthzServer.Run()
-	}
-
-	// Start up a metrics server if requested
-	if len(s.MetricsBindAddress) > 0 {
-		proxyMux := mux.NewPathRecorderMux("kube-proxy")
-		healthz.InstallHandler(proxyMux)
-		proxyMux.HandleFunc("/proxyMode", func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "%s", s.ProxyMode)
-		})
-		proxyMux.Handle("/metrics", legacyregistry.Handler())
-		if s.EnableProfiling {
-			routes.Profiling{}.Install(proxyMux)
-		}
-		configz.InstallHandler(proxyMux)
-		go wait.Until(func() {
-			err := http.ListenAndServe(s.MetricsBindAddress, proxyMux)
-			if err != nil {
-				utilruntime.HandleError(fmt.Errorf("starting metrics server failed: %v", err))
-			}
-		}, 5*time.Second, wait.NeverStop)
-	}
-
-	// Tune conntrack, if requested
-	// Conntracker is always nil for windows
-	if s.Conntracker != nil {
-		max, err := getConntrackMax(s.ConntrackConfiguration)
-		if err != nil {
-			return err
-		}
-		if max > 0 {
-			err := s.Conntracker.SetMax(max)
-			if err != nil {
-				if err != errReadOnlySysFS {
-					return err
-				}
-				// errReadOnlySysFS is caused by a known docker issue (https://github.com/docker/docker/issues/24000),
-				// the only remediation we know is to restart the docker daemon.
-				// Here we'll send an node event with specific reason and message, the
-				// administrator should decide whether and how to handle this issue,
-				// whether to drain the node and restart docker.  Occurs in other container runtimes
-				// as well.
-				// TODO(random-liu): Remove this when the docker bug is fixed.
-				const message = "CRI error: /sys is read-only: " +
-					"cannot modify conntrack limits, problems may arise later (If running Docker, see docker issue #24000)"
-				s.Recorder.Eventf(s.NodeRef, api.EventTypeWarning, err.Error(), message)
-			}
-		}
-
-		if s.ConntrackConfiguration.TCPEstablishedTimeout != nil && s.ConntrackConfiguration.TCPEstablishedTimeout.Duration > 0 {
-			timeout := int(s.ConntrackConfiguration.TCPEstablishedTimeout.Duration / time.Second)
-			if err := s.Conntracker.SetTCPEstablishedTimeout(timeout); err != nil {
-				return err
-			}
-		}
-
-		if s.ConntrackConfiguration.TCPCloseWaitTimeout != nil && s.ConntrackConfiguration.TCPCloseWaitTimeout.Duration > 0 {
-			timeout := int(s.ConntrackConfiguration.TCPCloseWaitTimeout.Duration / time.Second)
-			if err := s.Conntracker.SetTCPCloseWaitTimeout(timeout); err != nil {
-				return err
-			}
-		}
-	}
-
-	noProxyName, err := labels.NewRequirement(apis.LabelServiceProxyName, selection.DoesNotExist, nil)
-	if err != nil {
-		return err
-	}
-
-	noHeadlessEndpoints, err := labels.NewRequirement(v1.IsHeadlessService, selection.DoesNotExist, nil)
-	if err != nil {
-		return err
-	}
-
-	labelSelector := labels.NewSelector()
-	labelSelector = labelSelector.Add(*noProxyName, *noHeadlessEndpoints)
-
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(s.Client, s.ConfigSyncPeriod,
-		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
-			options.LabelSelector = labelSelector.String()
-		}))
-
-	// Create configs (i.e. Watches for Services and Endpoints or EndpointSlices)
-	// Note: RegisterHandler() calls need to happen before creation of Sources because sources
-	// only notify on changes, and the initial update (on process start) may be lost if no handlers
-	// are registered yet.
-	serviceConfig := config.NewServiceConfig(informerFactory.Core().V1().Services(), s.ConfigSyncPeriod)
-	serviceConfig.RegisterEventHandler(s.Proxier)
-	go serviceConfig.Run(wait.NeverStop)
-
-	if utilfeature.DefaultFeatureGate.Enabled(features.EndpointSlice) {
-		endpointSliceConfig := config.NewEndpointSliceConfig(informerFactory.Discovery().V1alpha1().EndpointSlices(), s.ConfigSyncPeriod)
-		endpointSliceConfig.RegisterEventHandler(s.Proxier)
-		go endpointSliceConfig.Run(wait.NeverStop)
-	} else {
-		endpointsConfig := config.NewEndpointsConfig(informerFactory.Core().V1().Endpoints(), s.ConfigSyncPeriod)
-		endpointsConfig.RegisterEventHandler(s.Proxier)
-		go endpointsConfig.Run(wait.NeverStop)
-	}
-
-	// This has to start after the calls to NewServiceConfig and NewEndpointsConfig because those
-	// functions must configure their shared informer event handlers first.
-	informerFactory.Start(wait.NeverStop)
-
-	// Birth Cry after the birth is successful
-	s.birthCry()
-
-	// Just loop forever for now...
-	s.Proxier.SyncLoop()
-	return nil
-}
-
-func (s *ProxyServer) birthCry() {
-	s.Recorder.Eventf(s.NodeRef, api.EventTypeNormal, "Starting", "Starting kube-proxy.")
-}
-
-func getConntrackMax(config kubeproxyconfig.KubeProxyConntrackConfiguration) (int, error) {
-	if config.MaxPerCore != nil && *config.MaxPerCore > 0 {
-		floor := 0
-		if config.Min != nil {
-			floor = int(*config.Min)
-		}
-		scaled := int(*config.MaxPerCore) * goruntime.NumCPU()
-		if scaled > floor {
-			klog.V(3).Infof("getConntrackMax: using scaled conntrack-max-per-core")
-			return scaled, nil
-		}
-		klog.V(3).Infof("getConntrackMax: using conntrack-min")
-		return floor, nil
-	}
-	return 0, nil
-}
-
-// CleanupAndExit remove iptables rules and exit if success return nil
-func (s *ProxyServer) CleanupAndExit() error {
-	encounteredError := userspace.CleanupLeftovers(s.IptInterface)
-	encounteredError = iptables.CleanupLeftovers(s.IptInterface) || encounteredError
-	encounteredError = ipvs.CleanupLeftovers(s.IpvsInterface, s.IptInterface, s.IpsetInterface, s.CleanupIPVS) || encounteredError
-	if encounteredError {
-		return errors.New("encountered an error while tearing down rules")
-	}
-
-	return nil
 }

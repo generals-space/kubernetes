@@ -99,7 +99,15 @@ type IPSet struct {
 }
 
 // NewIPSet initialize a new IPSet struct
-func NewIPSet(handle utilipset.Interface, name string, setType utilipset.Type, isIPv6 bool, comment string) *IPSet {
+// caller: proxier.go -> NewProxier()
+// @param handle: pkg/util/ipset/ipset.go -> New(), 之后会通过exec接口进行操作.
+func NewIPSet(
+	handle utilipset.Interface, 
+	name string, 
+	setType utilipset.Type, 
+	isIPv6 bool, 
+	comment string,
+) *IPSet {
 	hashFamily := utilipset.ProtocolFamilyIPV4
 	if isIPv6 {
 		hashFamily = utilipset.ProtocolFamilyIPV6
@@ -182,6 +190,7 @@ func (set *IPSet) syncIPSetEntries() {
 	}
 }
 
+// ensureIPSet 创建ipset项
 func ensureIPSet(set *IPSet) error {
 	if err := set.handle.CreateSet(&set.IPSet, true); err != nil {
 		klog.Errorf("Failed to make sure ip set: %v exist, error: %v", set, err)

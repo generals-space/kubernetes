@@ -39,8 +39,8 @@ type Provider interface {
 	SyncLoop()
 }
 
-// ServicePortName carries a namespace + name + portname.  This is the unique
-// identifier for a load-balanced service.
+// ServicePortName carries a namespace + name + portname. 
+// This is the unique identifier for a load-balanced service.
 type ServicePortName struct {
 	types.NamespacedName
 	Port string

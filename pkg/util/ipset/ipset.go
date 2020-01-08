@@ -36,7 +36,8 @@ type Interface interface {
 	DestroySet(set string) error
 	// DestroyAllSets deletes all sets.
 	DestroyAllSets() error
-	// CreateSet creates a new set.  It will ignore error when the set already exists if ignoreExistErr=true.
+	// CreateSet creates a new set. 
+	// It will ignore error when the set already exists if ignoreExistErr=true.
 	CreateSet(set *IPSet, ignoreExistErr bool) error
 	// AddEntry adds a new entry to the named set.  It will ignore error when the entry already exists if ignoreExistErr=true.
 	AddEntry(entry string, set *IPSet, ignoreExistErr bool) error
@@ -272,6 +273,7 @@ func New(exec utilexec.Interface) Interface {
 // CreateSet creates a new set, it will ignore error when the set already exists if ignoreExistErr=true.
 func (runner *runner) CreateSet(set *IPSet, ignoreExistErr bool) error {
 	// sets some IPSet fields if not present to their default values.
+	// 这里只是设置几个默认值, 真正执行写入操作的是runner.createSet()函数.
 	set.setIPSetDefaults()
 
 	// Validate ipset before creating

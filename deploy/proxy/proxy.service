@@ -1,0 +1,13 @@
+## /usr/lib/systemd/system/proxy.service 
+[Unit]
+Description=Kubernetes Proxy
+After=network.target
+[Service]
+ExecStart=/usr/local/kubernetes/bin/kube-proxy \
+    --config=/var/lib/kube-proxy/config.conf \
+    --v=4
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

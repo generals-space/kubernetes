@@ -164,8 +164,8 @@ func construct(name string, fn func(), minInterval, maxInterval time.Duration, b
 	return bfr
 }
 
-// Loop handles the periodic timer and run requests.  This is expected to be
-// called as a goroutine.
+// Loop handles the periodic timer and run requests. 
+// This is expected to be called as a goroutine.
 func (bfr *BoundedFrequencyRunner) Loop(stop <-chan struct{}) {
 	klog.V(3).Infof("%s Loop running", bfr.name)
 	bfr.timer.Reset(bfr.maxInterval)
