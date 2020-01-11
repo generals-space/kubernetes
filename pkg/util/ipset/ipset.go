@@ -165,7 +165,8 @@ type Entry struct {
 	SetType Type
 }
 
-// Validate checks if a given ipset entry is valid or not.  The set parameter is the ipset that entry belongs to.
+// Validate checks if a given ipset entry is valid or not. 
+// The set parameter is the ipset that entry belongs to.
 func (e *Entry) Validate(set *IPSet) bool {
 	if e.Port < 0 {
 		klog.Errorf("Entry %v port number %d should be >=0 for ipset %v", e, e.Port, set)
@@ -284,8 +285,9 @@ func (runner *runner) CreateSet(set *IPSet, ignoreExistErr bool) error {
 	return runner.createSet(set, ignoreExistErr)
 }
 
-// If ignoreExistErr is set to true, then the -exist option of ipset will be specified, ipset ignores the error
-// otherwise raised when the same set (setname and create parameters are identical) already exists.
+// If ignoreExistErr is set to true, then the -exist option of ipset will be specified, 
+// ipset ignores the error otherwise raised when the same set 
+// (setname and create parameters are identical) already exists.
 func (runner *runner) createSet(set *IPSet, ignoreExistErr bool) error {
 	args := []string{"create", set.Name, string(set.SetType)}
 	if set.SetType == HashIPPortIP || set.SetType == HashIPPort || set.SetType == HashIPPortNet {

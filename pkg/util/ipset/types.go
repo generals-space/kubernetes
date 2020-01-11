@@ -24,8 +24,12 @@ const (
 	// you can store IP address and protocol-port pairs in it.  TCP, SCTP, UDP, UDPLITE, ICMP and ICMPv6 are supported
 	// with port numbers/ICMP(v6) types and other protocol numbers without port information.
 	HashIPPort Type = "hash:ip,port"
-	// HashIPPortIP represents the `hash:ip,port,ip` type ipset.  The hash:ip,port,ip set type uses a hash to store
-	// IP address, port number and a second IP address triples.  The port number is interpreted together with a
+	// HashIPPortIP 第一个IP表示主IP, 第二个IP表示次IP, 如果没有次IP, 则也写成主IP.
+	// port默认为tcp, 如果是udp, 可以写作 udp:53
+	// HashIPPortIP represents the `hash:ip,port,ip` type ipset. 
+	// The hash:ip,port,ip set type uses a hash to store
+	// IP address, port number and a second IP address triples. 
+	// The port number is interpreted together with a
 	// protocol (default TCP) and zero protocol number cannot be used.
 	HashIPPortIP Type = "hash:ip,port,ip"
 	// HashIPPortNet represents the `hash:ip,port,net` type ipset.  The hash:ip,port,net set type uses a hash to store IP address, port number and IP network address triples.  The port

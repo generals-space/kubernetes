@@ -3,11 +3,13 @@ package ipvs
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/proxy"
 	"k8s.io/kubernetes/pkg/proxy/metrics"
@@ -52,8 +54,6 @@ func (proxier *Proxier) syncProxyRules() {
 	fmt.Printf("service update result: %+v\n", serviceUpdateResult)
 	fmt.Printf("endpoint update result: %+v\n", endpointUpdateResult)
 
-	fmt.Printf("ipset list: %+v\n", proxier.ipsetList)
-
 	staleServices := serviceUpdateResult.UDPStaleClusterIP
 	// merge stale services gathered from updateEndpointsMap
 	for _, svcPortName := range endpointUpdateResult.StaleServiceNames {
@@ -91,6 +91,7 @@ func (proxier *Proxier) syncProxyRules() {
 		return
 	}
 
+	// 调用ipset命令创建ipset条目
 	// make sure ip sets exists in the system.
 	for _, set := range proxier.ipsetList {
 		if err := ensureIPSet(set); err != nil {
@@ -99,6 +100,8 @@ func (proxier *Proxier) syncProxyRules() {
 		set.resetEntries()
 	}
 
+	// 本次for循环的更新操作中, portsMap中存储的是old port, replacementPortsMap中的是new port.
+	// 所以需要把后者中没有的端口关掉, 然后替换为后者, 多退少补.
 	// Accumulate the set of local ports that we will be holding open once this update is complete
 	replacementPortsMap := map[utilproxy.LocalPort]utilproxy.Closeable{}
 	// activeIPVSServices represents IPVS service successfully created in this round of sync
@@ -121,6 +124,8 @@ func (proxier *Proxier) syncProxyRules() {
 	// Both nodeAddresses and nodeIPs can be reused for all nodePort services
 	// and only need to be computed if we have at least one nodePort service.
 	var (
+		// nodeAddresses nodeport类型的端口应该监听宿主机上的哪些网络接口, 比如ipv4的0.0.0.0和ipv6的:::0等.
+		// 在下面的`if hasNodePort{}`块中有赋值.
 		// List of node addresses to listen on if a nodePort is set.
 		nodeAddresses []string
 		// List of node IP addresses to be used as IPVS services if nodePort is set.
@@ -128,6 +133,9 @@ func (proxier *Proxier) syncProxyRules() {
 	)
 
 	if hasNodePort {
+		fmt.Println("============= hasNodePort = true, do some thing")
+		fmt.Printf("proxier.nodePortAddresses: %+v\n", proxier.nodePortAddresses)
+
 		nodeAddrSet, err := utilproxy.GetNodeAddresses(
 			proxier.nodePortAddresses,
 			proxier.networkInterfacer,
@@ -148,31 +156,40 @@ func (proxier *Proxier) syncProxyRules() {
 				nodeIPs = append(nodeIPs, net.ParseIP(address))
 			}
 		}
+		fmt.Printf("============= hasNodePort and get nodeIPs: %+v\n", nodeIPs)
 	}
 
+	fmt.Println("================================ the main loop start...")
 	// Build IPVS rules for each service.
 	// 这里才是重头戏...
+	// svc的字符串格式应该为 service对象IP:port端口号/协议
 	for svcName, svc := range proxier.serviceMap {
 		svcInfo, ok := svc.(*serviceInfo)
 		if !ok {
 			klog.Errorf("Failed to cast serviceInfo %q", svcName.String())
 			continue
 		}
+		// 同一个svc对象中的各个port协议相同.
 		protocol := strings.ToLower(string(svcInfo.Protocol()))
 		// Precompute svcNameString; with many services the many calls
 		// to ServicePortName.String() show up in CPU profiles.
 		svcNameString := svcName.String()
 
 		// Handle traffic that loops back to the originator with SNAT.
+		fmt.Println("================ loop back chain start...")
 		for _, e := range proxier.endpointsMap[svcName] {
+			fmt.Printf("endpoint owned by %s map val: %+v\n", svcName, e)
 			ep, ok := e.(*proxy.BaseEndpointInfo)
 			if !ok {
 				klog.Errorf("Failed to cast BaseEndpointInfo %q", e.String())
 				continue
 			}
-			if !ep.IsLocal {
-				continue
-			}
+			// hostNetwork: true 则 islocal 为 true...???
+			// 如果并未使用hostNetwork, 就不需要添加loop back链, 只走集中转发.
+			// if !ep.IsLocal {
+			// 	continue
+			// }
+			// service对象的IP属于service独立网段, 而endpoint的IP:port, 属于某个pod所有.
 			epIP := ep.IP()
 			epPort, err := ep.Port()
 			// Error parsing this endpoint has been logged. Skip to next endpoint.
@@ -192,9 +209,13 @@ func (proxier *Proxier) syncProxyRules() {
 			}
 			proxier.ipsetList[kubeLoopBackIPSet].activeEntries.Insert(entry.String())
 		}
+		fmt.Println("================ loop back chain end...")
 
 		// Capture the clusterIP.
 		// ipset call
+		// service对象的IP属于service独立网段, 而endpoint的IP:port, 属于某个pod所有.
+		// 当前所在的for循环遍历的serviceMap, 每个svcInfo对象都对应一个service中的单个port.
+		// 以kube-dns这个service为历, 其中有3个port, 那么会被遍历3次.
 		entry := &utilipset.Entry{
 			IP:       svcInfo.ClusterIP().String(),
 			Port:     svcInfo.Port(),
@@ -220,11 +241,14 @@ func (proxier *Proxier) syncProxyRules() {
 			serv.Flags |= utilipvs.FlagPersistent
 			serv.Timeout = uint32(svcInfo.StickyMaxAgeSeconds())
 		}
-		// We need to bind ClusterIP to dummy interface, so set `bindAddr` parameter to `true` in syncService()
-		if err := proxier.syncService(svcNameString, serv, true); err == nil {
+		// We need to bind ClusterIP to dummy interface,
+		// so set `bindAddr` parameter to `true` in syncService()
+		err := proxier.syncService(svcNameString, serv, true)
+		if err == nil {
 			activeIPVSServices[serv.String()] = true
 			activeBindAddrs[serv.Address.String()] = true
-			// ExternalTrafficPolicy only works for NodePort and external LB traffic, does not affect ClusterIP
+			// ExternalTrafficPolicy only works for NodePort and external LB traffic,
+			// does not affect ClusterIP.
 			// So we still need clusterIP rules in onlyNodeLocalEndpoints mode.
 			if err := proxier.syncEndpoint(svcName, false, serv); err != nil {
 				klog.Errorf("Failed to sync endpoint for service: %v, err: %v", serv, err)
@@ -233,6 +257,7 @@ func (proxier *Proxier) syncProxyRules() {
 			klog.Errorf("Failed to sync service: %v, err: %v", serv, err)
 		}
 
+		// 这种情况是type为ExternalIP才需要了解的, 内部逻辑与上面的差不多.
 		// Capture externalIPs.
 		for _, externalIP := range svcInfo.ExternalIPStrings() {
 			if local, err := utilproxy.IsLocalIP(externalIP); err != nil {
@@ -302,8 +327,9 @@ func (proxier *Proxier) syncProxyRules() {
 			} else {
 				klog.Errorf("Failed to sync service: %v, err: %v", serv, err)
 			}
-		}
+		} // externalIP for循环end
 
+		// 这种则是type为LoadBalancer的情况.
 		// Capture load-balancer ingress.
 		for _, ingress := range svcInfo.LoadBalancerIPStrings() {
 			if ingress != "" {
@@ -404,9 +430,11 @@ func (proxier *Proxier) syncProxyRules() {
 					klog.Errorf("Failed to sync service: %v, err: %v", serv, err)
 				}
 			}
-		}
+		} // loadbalancer for循环end
 
+		// nodeport不为0, 说明是在yaml部署文件中手动指定, 而不是留空.
 		if svcInfo.NodePort() != 0 {
+			// 注意 nodeAddresses 只有在 hasNodePort 情况下才会被赋值.
 			if len(nodeAddresses) == 0 || len(nodeIPs) == 0 {
 				// Skip nodePort configuration since an error occurred when
 				// computing nodeAddresses or nodeIPs.
@@ -433,11 +461,13 @@ func (proxier *Proxier) syncProxyRules() {
 
 			// For ports on node IPs, open the actual port and hold it.
 			for _, lp := range lps {
+				// 如果当前portsMap中该nodeport端口不为空, 说明已被占用
 				if proxier.portsMap[lp] != nil {
 					klog.V(4).Infof("Port %s was open before and is still needed", lp.String())
 					replacementPortsMap[lp] = proxier.portsMap[lp]
 					// We do not start listening on SCTP ports, according to our agreement in the
 					// SCTP support KEP
+					// 不监听SCTP协议端口, 可选的貌似只有tcp/udp
 				} else if svcInfo.Protocol() != v1.ProtocolSCTP {
 					socket, err := proxier.portMapper.OpenLocalPort(&lp)
 					if err != nil {
@@ -561,10 +591,12 @@ func (proxier *Proxier) syncProxyRules() {
 					klog.Errorf("Failed to sync service: %v, err: %v", serv, err)
 				}
 			}
-		}
+		} // nodeport if块end
 	}
+	fmt.Println("================================ the main loop end...")
 
 	// sync ipset entries
+	// main loop 中虽然有对ipsetList的Insert()操作, 但并没有真正写入, 这里才是.
 	for _, set := range proxier.ipsetList {
 		set.syncIPSetEntries()
 	}
@@ -576,6 +608,7 @@ func (proxier *Proxier) syncProxyRules() {
 	// Sync iptables rules.
 	// NOTE: NoFlushTables is used so we don't flush non-kubernetes chains in the table.
 	proxier.iptablesData.Reset()
+	// 这是要按顺序写入的吧...
 	proxier.iptablesData.Write(proxier.natChains.Bytes())
 	proxier.iptablesData.Write(proxier.natRules.Bytes())
 	proxier.iptablesData.Write(proxier.filterChains.Bytes())
@@ -587,6 +620,7 @@ func (proxier *Proxier) syncProxyRules() {
 		klog.Errorf("Failed to execute iptables-restore: %v\nRules:\n%s", err, proxier.iptablesData.Bytes())
 		metrics.IptablesRestoreFailuresTotal.Inc()
 		// Revert new local ports.
+		// iptables改写失败, portsMap则需还原.
 		utilproxy.RevertPorts(replacementPortsMap, proxier.portsMap)
 		return
 	}
@@ -599,6 +633,8 @@ func (proxier *Proxier) syncProxyRules() {
 	}
 
 	// Close old local ports and save new ones.
+	// 本次for循环的更新操作中, portsMap中存储的是old port, replacementPortsMap中的是new port.
+	// 所以需要把后者中没有的端口关掉, 然后替换为后者, 多退少补.
 	for k, v := range proxier.portsMap {
 		if replacementPortsMap[k] == nil {
 			v.Close()
@@ -649,4 +685,149 @@ func (proxier *Proxier) syncProxyRules() {
 		}
 	}
 	proxier.deleteEndpointConnections(endpointUpdateResult.StaleEndpoints)
+}
+
+// syncService 判断ipvs服务是否存在以及是否被更改过, 如果不存在则创建, 被修改则更新, 防止由于服务状态不造成的操作失败.
+// caller: proxier.syncProxyRules() main loop
+func (proxier *Proxier) syncService(svcName string, vs *utilipvs.VirtualServer, bindAddr bool) error {
+	appliedVirtualServer, _ := proxier.ipvs.GetVirtualServer(vs)
+	if appliedVirtualServer == nil || !appliedVirtualServer.Equal(vs) {
+		// 这里可能有两种情况
+		// 1. appliedVS为空, 说明传入的vs没找到, 那就需要手动创建ipvs服务.
+		// 2. appliedVS不为空, 但是也不等于传入的vs, 说明ipvs服务被更改过了.
+		if appliedVirtualServer == nil {
+			// IPVS service is not found, create a new service
+			klog.V(3).Infof("Adding new service %q %s:%d/%s", svcName, vs.Address, vs.Port, vs.Protocol)
+			if err := proxier.ipvs.AddVirtualServer(vs); err != nil {
+				klog.Errorf("Failed to add IPVS service %q: %v", svcName, err)
+				return err
+			}
+		} else {
+			// IPVS service was changed, update the existing one
+			// During updates, service VIP will not go down
+			klog.V(3).Infof("IPVS service %s was changed", svcName)
+			if err := proxier.ipvs.UpdateVirtualServer(vs); err != nil {
+				klog.Errorf("Failed to update IPVS service, err:%v", err)
+				return err
+			}
+		}
+	}
+
+	// bind service address to dummy interface even if service not changed,
+	// in case that service IP was removed by other processes
+	if bindAddr {
+		klog.V(4).Infof("Bind addr %s", vs.Address.String())
+		_, err := proxier.netlinkHandle.EnsureAddressBind(vs.Address.String(), DefaultDummyDevice)
+		if err != nil {
+			klog.Errorf("Failed to bind service address to dummy device %q: %v", svcName, err)
+			return err
+		}
+	}
+	return nil
+}
+
+// syncEndpoint 把endpoint中的条目同步到ipvs服务中.
+// caller: proxier.syncProxyRules() main loop
+func (proxier *Proxier) syncEndpoint(
+	svcPortName proxy.ServicePortName,
+	onlyNodeLocalEndpoints bool,
+	vs *utilipvs.VirtualServer,
+) error {
+	appliedVirtualServer, err := proxier.ipvs.GetVirtualServer(vs)
+	if err != nil || appliedVirtualServer == nil {
+		klog.Errorf("Failed to get IPVS service, error: %v", err)
+		return err
+	}
+
+	// curEndpoints represents IPVS destinations listed from current system.
+	curEndpoints := sets.NewString()
+	// newEndpoints represents Endpoints watched from API Server.
+	newEndpoints := sets.NewString()
+
+	// 先获取当前节点上ipvs服务中的所有条目.
+	curDests, err := proxier.ipvs.GetRealServers(appliedVirtualServer)
+	if err != nil {
+		klog.Errorf("Failed to list IPVS destinations, error: %v", err)
+		return err
+	}
+	for _, des := range curDests {
+		curEndpoints.Insert(des.String())
+	}
+	// 然后插入当前集群endpoint条目(目标状态).
+	for _, epInfo := range proxier.endpointsMap[svcPortName] {
+		if onlyNodeLocalEndpoints && !epInfo.GetIsLocal() {
+			continue
+		}
+		newEndpoints.Insert(epInfo.String())
+	}
+
+	// Create new endpoints
+	for _, ep := range newEndpoints.List() {
+		ip, port, err := net.SplitHostPort(ep)
+		if err != nil {
+			klog.Errorf("Failed to parse endpoint: %v, error: %v", ep, err)
+			continue
+		}
+		portNum, err := strconv.Atoi(port)
+		if err != nil {
+			klog.Errorf("Failed to parse endpoint port %s, error: %v", port, err)
+			continue
+		}
+
+		newDest := &utilipvs.RealServer{
+			Address: net.ParseIP(ip),
+			Port:    uint16(portNum),
+			Weight:  1,
+		}
+
+		if curEndpoints.Has(ep) {
+			// check if newEndpoint is in gracefulDelete list, if true, delete this ep immediately
+			uniqueRS := GetUniqueRSName(vs, newDest)
+			if !proxier.gracefuldeleteManager.InTerminationList(uniqueRS) {
+				continue
+			}
+			klog.V(5).Infof("new ep %q is in graceful delete list", uniqueRS)
+			err := proxier.gracefuldeleteManager.MoveRSOutofGracefulDeleteList(uniqueRS)
+			if err != nil {
+				klog.Errorf("Failed to delete endpoint: %v in gracefulDeleteQueue, error: %v", ep, err)
+				continue
+			}
+		}
+		err = proxier.ipvs.AddRealServer(appliedVirtualServer, newDest)
+		if err != nil {
+			klog.Errorf("Failed to add destination: %v, error: %v", newDest, err)
+			continue
+		}
+	}
+	// Delete old endpoints
+	for _, ep := range curEndpoints.Difference(newEndpoints).UnsortedList() {
+		// if curEndpoint is in gracefulDelete, skip
+		uniqueRS := vs.String() + "/" + ep
+		if proxier.gracefuldeleteManager.InTerminationList(uniqueRS) {
+			continue
+		}
+		ip, port, err := net.SplitHostPort(ep)
+		if err != nil {
+			klog.Errorf("Failed to parse endpoint: %v, error: %v", ep, err)
+			continue
+		}
+		portNum, err := strconv.Atoi(port)
+		if err != nil {
+			klog.Errorf("Failed to parse endpoint port %s, error: %v", port, err)
+			continue
+		}
+
+		delDest := &utilipvs.RealServer{
+			Address: net.ParseIP(ip),
+			Port:    uint16(portNum),
+		}
+
+		klog.V(5).Infof("Using graceful delete to delete: %v", uniqueRS)
+		err = proxier.gracefuldeleteManager.GracefulDeleteRS(appliedVirtualServer, delDest)
+		if err != nil {
+			klog.Errorf("Failed to delete destination: %v, error: %v", uniqueRS, err)
+			continue
+		}
+	}
+	return nil
 }

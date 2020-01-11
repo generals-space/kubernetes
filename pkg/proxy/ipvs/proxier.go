@@ -63,12 +63,18 @@ const (
 	// kubePostroutingChain is the kubernetes postrouting chain
 	kubePostroutingChain utiliptables.Chain = "KUBE-POSTROUTING"
 
+	// KubeMarkMasqChain proxy组件中应该只作为通过-j指定的target, 并没有在该链下写入规则.
+	// 实际上ta下面只有一条规则, 但却是在`pkg/kubelet/kubelet_network_linux.go`的
+	// syncNetworkUtil()中操作的, 主要还是mark的操作.
 	// KubeMarkMasqChain is the mark-for-masquerade chain
 	KubeMarkMasqChain utiliptables.Chain = "KUBE-MARK-MASQ"
 
 	// KubeNodePortChain is the kubernetes node port chain
 	KubeNodePortChain utiliptables.Chain = "KUBE-NODE-PORT"
 
+	// KubeMarkDropChain proxy组件中应该只作为通过-j指定的target, 并没有在该链下写入规则.
+	// 实际上ta下面只有一条规则, 但却是在`pkg/kubelet/kubelet_network_linux.go`的
+	// syncNetworkUtil()中操作的, 主要还是mark的操作.
 	// KubeMarkDropChain is the mark-for-drop chain
 	KubeMarkDropChain utiliptables.Chain = "KUBE-MARK-DROP"
 
@@ -85,7 +91,10 @@ const (
 	DefaultDummyDevice = "kube-ipvs0"
 )
 
-// iptablesJumpChain is tables of iptables chains that ipvs proxier used to install iptables or cleanup iptables.
+// iptablesJumpChain 貌似是把4大主链下都挂一个kube相关的子链.
+// 而且在createAndLinkeKubeChain()还是通过-I从头插入的, 说明所有流量要先走kube的规则.
+// iptablesJumpChain is tables of iptables chains that 
+// ipvs proxier used to install iptables or cleanup iptables.
 // `to` is the iptables chain we want to operate.
 // `from` is the source iptables chain
 var iptablesJumpChain = []struct {
@@ -100,6 +109,7 @@ var iptablesJumpChain = []struct {
 	{utiliptables.TableFilter, utiliptables.ChainForward, KubeForwardChain, "kubernetes forwarding rules"},
 }
 
+// iptablesChains kuber所需的iptables链和所在的表.
 var iptablesChains = []struct {
 	table utiliptables.Table
 	chain utiliptables.Chain
@@ -109,8 +119,8 @@ var iptablesChains = []struct {
 	{utiliptables.TableNAT, KubeFireWallChain},
 	{utiliptables.TableNAT, KubeNodePortChain},
 	{utiliptables.TableNAT, KubeLoadBalancerChain},
-	{utiliptables.TableNAT, KubeMarkMasqChain},
-	{utiliptables.TableNAT, KubeMarkDropChain},
+	{utiliptables.TableNAT, KubeMarkMasqChain}, // 清理时不会移除
+	{utiliptables.TableNAT, KubeMarkDropChain}, // 清理时不会移除
 	{utiliptables.TableFilter, KubeForwardChain},
 }
 
@@ -148,15 +158,18 @@ var ipsetInfo = []struct {
 	{kubeNodePortLocalSetSCTP, utilipset.HashIPPort, kubeNodePortLocalSetSCTPComment},
 }
 
+// ipsetWithIptablesChain 这里面都是要插入nat表中的规则, 所以每个成员都有from和to两个字段.
+// 当然, to其实也可能是RETURN操作.
+// 此数组在 proxier.writeIptablesRules() 函数中被遍历创建.
 // ipsetWithIptablesChain is the ipsets list with iptables source chain and the chain jump to
-// `iptables -t nat -A <from> -m set --match-set <name> <matchType> -j <to>`
-// example: iptables -t nat -A KUBE-SERVICES -m set --match-set KUBE-NODE-PORT-TCP dst -j KUBE-NODE-PORT
+// `-t nat -A <from> -m set --match-set <name> <matchType> -j <to>`
+// example: -t nat -A KUBE-SERVICES -m set --match-set KUBE-NODE-PORT-TCP dst -j KUBE-NODE-PORT
 // ipsets with other match rules will be created Individually.
 // Note: kubeNodePortLocalSetTCP must be prior to kubeNodePortSetTCP, the same for UDP.
 var ipsetWithIptablesChain = []struct {
-	name          string
-	from          string
-	to            string
+	name          string // 某个ipset集合的名称
+	from          string // -I/-A 要插入的链
+	to            string // to可能是MASQUERADE/RETURN这种处理方式, 也可能是另外一条链, 应该叫target.
 	matchType     string
 	protocolMatch string
 }{
@@ -195,11 +208,17 @@ type Proxier struct {
 	endpointsChanges *proxy.EndpointChangeTracker
 	serviceChanges   *proxy.ServiceChangeTracker
 
-	mu           sync.Mutex // protects the following fields
+	mu sync.Mutex // protects the following fields
 	// proxier.serviceMap 的值为当前集群中所有service的映射表,
 	// key为 namespace/serviceName:portName, val为 serviceIP:port/协议
-	serviceMap   proxy.ServiceMap
+	// 一个service中可能有多个port, 每个port都对应serviceMap中的一个成员.
+	serviceMap proxy.ServiceMap
+	// proxier.EndpointsMap 的值为当前集群中各service对应的endpoint表(一个svc中可能存在多个port, 也就存在多个ep).
+	// key为 namespace/serviceName:portName(与ServiceMap的key相同),
+	// val为成员格式 serviceIP:port 的数组.
 	endpointsMap proxy.EndpointsMap
+	// portsMap key为各nodePort类型服务要监听的本地(宿主机)端口, val貌似为socket对象.
+	// 在proxier.syncProxyRules()函数进行赋值操作.
 	portsMap     map[utilproxy.LocalPort]utilproxy.Closeable
 	// endpointsSynced, endpointSlicesSynced, and servicesSynced are set to true when
 	// corresponding objects are synced after startup. This is used to avoid updating
@@ -231,7 +250,7 @@ type Proxier struct {
 	healthChecker  healthcheck.Server
 	healthzServer  healthcheck.HealthzUpdater
 	// ipvsScheduler ipvs调度方式, 可选的有rr, wrr, lc等.
-	ipvsScheduler  string
+	ipvsScheduler string
 	// Added as a member to the struct to allow injection for testing.
 	ipGetter IPGetter
 	// The following buffers are used to reuse memory and avoid allocations
@@ -428,7 +447,7 @@ func NewProxier(ipt utiliptables.Interface,
 	}
 
 	// use default implementations of deps
-	healthChecker := healthcheck.NewServer(hostname, recorder, nil, nil) 
+	healthChecker := healthcheck.NewServer(hostname, recorder, nil, nil)
 
 	endpointSlicesEnabled := utilfeature.DefaultFeatureGate.Enabled(features.EndpointSlice)
 
@@ -475,16 +494,16 @@ func NewProxier(ipt utiliptables.Interface,
 	}
 	burstSyncs := 2
 	klog.Infof(
-		"minSyncPeriod: %v, syncPeriod: %v, burstSyncs: %d", 
+		"minSyncPeriod: %v, syncPeriod: %v, burstSyncs: %d",
 		minSyncPeriod, syncPeriod, burstSyncs,
 	)
-	// config.conf中的ipvs中有相关配置, 
+	// config.conf中的ipvs中有相关配置,
 	// 也可以使用`--ipvs-min-sync-period`和`--ipvs-sync-period`选项.
 	proxier.syncRunner = async.NewBoundedFrequencyRunner(
-		"sync-runner", 
-		proxier.syncProxyRules, 
-		minSyncPeriod, 
-		syncPeriod, 
+		"sync-runner",
+		proxier.syncProxyRules,
+		minSyncPeriod,
+		syncPeriod,
 		burstSyncs,
 	)
 	proxier.gracefuldeleteManager.Run()
@@ -626,8 +645,8 @@ func (handle *LinuxKernelHandler) GetKernelVersion() (string, error) {
 
 // CanUseIPVSProxier 判断ipvs模式是否可用, 判断依据就是ipvs所需模块是否已经全部加载.
 // CanUseIPVSProxier returns true if we can use the ipvs Proxier.
-// This is determined by checking if all the required kernel modules can be loaded. 
-// It may return an error if it fails to get the kernel modules information without error, 
+// This is determined by checking if all the required kernel modules can be loaded.
+// It may return an error if it fails to get the kernel modules information without error,
 // in which case it will also return false.
 func CanUseIPVSProxier(handle KernelHandler, ipsetver IPSetVersioner) (bool, error) {
 	mods, err := handle.GetModules()
@@ -764,8 +783,8 @@ func (proxier *Proxier) Sync() {
 
 // SyncLoop 运行周期性任务proxier.syncProxyRules(), 阻塞不返回.
 // syncRunner在NewProxier()中初始化.
-// SyncLoop runs periodic work. 
-// This is expected to run as a goroutine or as the main loop of the app. 
+// SyncLoop runs periodic work.
+// This is expected to run as a goroutine or as the main loop of the app.
 // It does not return.
 func (proxier *Proxier) SyncLoop() {
 	// Update healthz timestamp at beginning in case Sync() never succeeds.
@@ -887,246 +906,6 @@ func (proxier *Proxier) OnEndpointSlicesSynced() {
 // EntryInvalidErr indicates if an ipset entry is invalid or not
 const EntryInvalidErr = "error adding entry %s to ipset %s"
 
-// writeIptablesRules write all iptables rules to proxier.natRules or proxier.FilterRules that ipvs proxier needed
-// according to proxier.ipsetList information and the ipset match relationship that `ipsetWithIptablesChain` specified.
-// some ipset(kubeClusterIPSet for example) have particular match rules and iptables jump relation should be sync separately.
-func (proxier *Proxier) writeIptablesRules() {
-	// We are creating those slices ones here to avoid memory reallocations
-	// in every loop. Note that reuse the memory, instead of doing:
-	//   slice = <some new slice>
-	// you should always do one of the below:
-	//   slice = slice[:0] // and then append to it
-	//   slice = append(slice[:0], ...)
-	// To avoid growing this slice, we arbitrarily set its size to 64,
-	// there is never more than that many arguments for a single line.
-	// Note that even if we go over 64, it will still be correct - it
-	// is just for efficiency, not correctness.
-	args := make([]string, 64)
-
-	for _, set := range ipsetWithIptablesChain {
-		if _, find := proxier.ipsetList[set.name]; find && !proxier.ipsetList[set.name].isEmpty() {
-			args = append(args[:0], "-A", set.from)
-			if set.protocolMatch != "" {
-				args = append(args, "-p", set.protocolMatch)
-			}
-			args = append(args,
-				"-m", "comment", "--comment", proxier.ipsetList[set.name].getComment(),
-				"-m", "set", "--match-set", proxier.ipsetList[set.name].Name,
-				set.matchType,
-			)
-			writeLine(proxier.natRules, append(args, "-j", set.to)...)
-		}
-	}
-
-	if !proxier.ipsetList[kubeClusterIPSet].isEmpty() {
-		args = append(args[:0],
-			"-A", string(kubeServicesChain),
-			"-m", "comment", "--comment", proxier.ipsetList[kubeClusterIPSet].getComment(),
-			"-m", "set", "--match-set", proxier.ipsetList[kubeClusterIPSet].Name,
-		)
-		if proxier.masqueradeAll {
-			writeLine(proxier.natRules, append(args, "dst,dst", "-j", string(KubeMarkMasqChain))...)
-		} else if len(proxier.clusterCIDR) > 0 {
-			// This masquerades off-cluster traffic to a service VIP.  The idea
-			// is that you can establish a static route for your Service range,
-			// routing to any node, and that node will bridge into the Service
-			// for you.  Since that might bounce off-node, we masquerade here.
-			// If/when we support "Local" policy for VIPs, we should update this.
-			writeLine(proxier.natRules, append(args, "dst,dst", "! -s", proxier.clusterCIDR, "-j", string(KubeMarkMasqChain))...)
-		} else {
-			// Masquerade all OUTPUT traffic coming from a service ip.
-			// The kube dummy interface has all service VIPs assigned which
-			// results in the service VIP being picked as the source IP to reach
-			// a VIP. This leads to a connection from VIP:<random port> to
-			// VIP:<service port>.
-			// Always masquerading OUTPUT (node-originating) traffic with a VIP
-			// source ip and service port destination fixes the outgoing connections.
-			writeLine(proxier.natRules, append(args, "src,dst", "-j", string(KubeMarkMasqChain))...)
-		}
-	}
-
-	if !proxier.ipsetList[kubeExternalIPSet].isEmpty() {
-		// Build masquerade rules for packets to external IPs.
-		args = append(args[:0],
-			"-A", string(kubeServicesChain),
-			"-m", "comment", "--comment", proxier.ipsetList[kubeExternalIPSet].getComment(),
-			"-m", "set", "--match-set", proxier.ipsetList[kubeExternalIPSet].Name,
-			"dst,dst",
-		)
-		writeLine(proxier.natRules, append(args, "-j", string(KubeMarkMasqChain))...)
-		// Allow traffic for external IPs that does not come from a bridge (i.e. not from a container)
-		// nor from a local process to be forwarded to the service.
-		// This rule roughly translates to "all traffic from off-machine".
-		// This is imperfect in the face of network plugins that might not use a bridge, but we can revisit that later.
-		externalTrafficOnlyArgs := append(args,
-			"-m", "physdev", "!", "--physdev-is-in",
-			"-m", "addrtype", "!", "--src-type", "LOCAL")
-		writeLine(proxier.natRules, append(externalTrafficOnlyArgs, "-j", "ACCEPT")...)
-		dstLocalOnlyArgs := append(args, "-m", "addrtype", "--dst-type", "LOCAL")
-		// Allow traffic bound for external IPs that happen to be recognized as local IPs to stay local.
-		// This covers cases like GCE load-balancers which get added to the local routing table.
-		writeLine(proxier.natRules, append(dstLocalOnlyArgs, "-j", "ACCEPT")...)
-	}
-
-	// -A KUBE-SERVICES  -m addrtype  --dst-type LOCAL -j KUBE-NODE-PORT
-	args = append(args[:0],
-		"-A", string(kubeServicesChain),
-		"-m", "addrtype", "--dst-type", "LOCAL",
-	)
-	writeLine(proxier.natRules, append(args, "-j", string(KubeNodePortChain))...)
-
-	// mark drop for KUBE-LOAD-BALANCER
-	writeLine(proxier.natRules, []string{
-		"-A", string(KubeLoadBalancerChain),
-		"-j", string(KubeMarkMasqChain),
-	}...)
-
-	// mark drop for KUBE-FIRE-WALL
-	writeLine(proxier.natRules, []string{
-		"-A", string(KubeFireWallChain),
-		"-j", string(KubeMarkDropChain),
-	}...)
-
-	// Accept all traffic with destination of ipvs virtual service, in case other iptables rules
-	// block the traffic, that may result in ipvs rules invalid.
-	// Those rules must be in the end of KUBE-SERVICE chain
-	proxier.acceptIPVSTraffic()
-
-	// If the masqueradeMark has been added then we want to forward that same
-	// traffic, this allows NodePort traffic to be forwarded even if the default
-	// FORWARD policy is not accept.
-	writeLine(proxier.filterRules,
-		"-A", string(KubeForwardChain),
-		"-m", "comment", "--comment", `"kubernetes forwarding rules"`,
-		"-m", "mark", "--mark", proxier.masqueradeMark,
-		"-j", "ACCEPT",
-	)
-
-	// The following rules can only be set if clusterCIDR has been defined.
-	if len(proxier.clusterCIDR) != 0 {
-		// The following two rules ensure the traffic after the initial packet
-		// accepted by the "kubernetes forwarding rules" rule above will be
-		// accepted, to be as specific as possible the traffic must be sourced
-		// or destined to the clusterCIDR (to/from a pod).
-		writeLine(proxier.filterRules,
-			"-A", string(KubeForwardChain),
-			"-s", proxier.clusterCIDR,
-			"-m", "comment", "--comment", `"kubernetes forwarding conntrack pod source rule"`,
-			"-m", "conntrack",
-			"--ctstate", "RELATED,ESTABLISHED",
-			"-j", "ACCEPT",
-		)
-		writeLine(proxier.filterRules,
-			"-A", string(KubeForwardChain),
-			"-m", "comment", "--comment", `"kubernetes forwarding conntrack pod destination rule"`,
-			"-d", proxier.clusterCIDR,
-			"-m", "conntrack",
-			"--ctstate", "RELATED,ESTABLISHED",
-			"-j", "ACCEPT",
-		)
-	}
-
-	// Write the end-of-table markers.
-	writeLine(proxier.filterRules, "COMMIT")
-	writeLine(proxier.natRules, "COMMIT")
-}
-
-func (proxier *Proxier) acceptIPVSTraffic() {
-	sets := []string{kubeClusterIPSet, kubeLoadBalancerSet}
-	for _, set := range sets {
-		var matchType string
-		if !proxier.ipsetList[set].isEmpty() {
-			switch proxier.ipsetList[set].SetType {
-			case utilipset.BitmapPort:
-				matchType = "dst"
-			default:
-				matchType = "dst,dst"
-			}
-			writeLine(proxier.natRules, []string{
-				"-A", string(kubeServicesChain),
-				"-m", "set", "--match-set", proxier.ipsetList[set].Name, matchType,
-				"-j", "ACCEPT",
-			}...)
-		}
-	}
-}
-
-// createAndLinkeKubeChain 创建ipvs所需的iptables规则.
-// createAndLinkeKubeChain create all kube chains that ipvs proxier need and write basic link.
-func (proxier *Proxier) createAndLinkeKubeChain() {
-	existingFilterChains := proxier.getExistingChains(proxier.filterChainsData, utiliptables.TableFilter)
-	existingNATChains := proxier.getExistingChains(proxier.iptablesData, utiliptables.TableNAT)
-
-	// Make sure we keep stats for the top-level chains
-	for _, ch := range iptablesChains {
-		if _, err := proxier.iptables.EnsureChain(ch.table, ch.chain); err != nil {
-			klog.Errorf("Failed to ensure that %s chain %s exists: %v", ch.table, ch.chain, err)
-			return
-		}
-		if ch.table == utiliptables.TableNAT {
-			if chain, ok := existingNATChains[ch.chain]; ok {
-				writeBytesLine(proxier.natChains, chain)
-			} else {
-				writeLine(proxier.natChains, utiliptables.MakeChainLine(kubePostroutingChain))
-			}
-		} else {
-			if chain, ok := existingFilterChains[KubeForwardChain]; ok {
-				writeBytesLine(proxier.filterChains, chain)
-			} else {
-				writeLine(proxier.filterChains, utiliptables.MakeChainLine(KubeForwardChain))
-			}
-		}
-	}
-
-	for _, jc := range iptablesJumpChain {
-		args := []string{"-m", "comment", "--comment", jc.comment, "-j", string(jc.to)}
-		_, err := proxier.iptables.EnsureRule(utiliptables.Prepend, jc.table, jc.from, args...)
-		if err != nil {
-			klog.Errorf("Failed to ensure that %s chain %s jumps to %s: %v", jc.table, jc.from, jc.to, err)
-		}
-	}
-
-	// Install the kubernetes-specific postrouting rules. We use a whole chain for
-	// this so that it is easier to flush and change, for example if the mark
-	// value should ever change.
-	// NB: THIS MUST MATCH the corresponding code in the kubelet
-	masqRule := []string{
-		"-A", string(kubePostroutingChain),
-		"-m", "comment", "--comment", `"kubernetes service traffic requiring SNAT"`,
-		"-m", "mark", "--mark", proxier.masqueradeMark,
-		"-j", "MASQUERADE",
-	}
-	if proxier.iptables.HasRandomFully() {
-		masqRule = append(masqRule, "--random-fully")
-		klog.V(3).Info("Using `--random-fully` in the MASQUERADE rule for iptables")
-	} else {
-		klog.V(2).Info("Not using `--random-fully` in the MASQUERADE rule for iptables because the local version of iptables does not support it")
-	}
-	writeLine(proxier.natRules, masqRule...)
-
-	// Install the kubernetes-specific masquerade mark rule. We use a whole chain for
-	// this so that it is easier to flush and change, for example if the mark
-	// value should ever change.
-	writeLine(proxier.natRules, []string{
-		"-A", string(KubeMarkMasqChain),
-		"-j", "MARK", "--set-xmark", proxier.masqueradeMark,
-	}...)
-}
-
-// getExistingChains get iptables-save output so we can check for existing chains and rules.
-// This will be a map of chain name to chain with rules as stored in iptables-save/iptables-restore
-// Result may SHARE memory with contents of buffer.
-func (proxier *Proxier) getExistingChains(buffer *bytes.Buffer, table utiliptables.Table) map[utiliptables.Chain][]byte {
-	buffer.Reset()
-	err := proxier.iptables.SaveInto(table, buffer)
-	if err != nil { // if we failed to get any rules
-		klog.Errorf("Failed to execute iptables-save, syncing all rules: %v", err)
-	} else { // otherwise parse the output
-		return utiliptables.GetChainLines(table, buffer.Bytes())
-	}
-	return nil
-}
-
 // After a UDP endpoint has been removed, we must flush any pending conntrack entries to it, or else we
 // risk sending more traffic to it, all of which will be lost (because UDP).
 // This assumes the proxier mutex is held
@@ -1152,139 +931,6 @@ func (proxier *Proxier) deleteEndpointConnections(connectionMap []proxy.ServiceE
 			}
 		}
 	}
-}
-
-func (proxier *Proxier) syncService(svcName string, vs *utilipvs.VirtualServer, bindAddr bool) error {
-	appliedVirtualServer, _ := proxier.ipvs.GetVirtualServer(vs)
-	if appliedVirtualServer == nil || !appliedVirtualServer.Equal(vs) {
-		if appliedVirtualServer == nil {
-			// IPVS service is not found, create a new service
-			klog.V(3).Infof("Adding new service %q %s:%d/%s", svcName, vs.Address, vs.Port, vs.Protocol)
-			if err := proxier.ipvs.AddVirtualServer(vs); err != nil {
-				klog.Errorf("Failed to add IPVS service %q: %v", svcName, err)
-				return err
-			}
-		} else {
-			// IPVS service was changed, update the existing one
-			// During updates, service VIP will not go down
-			klog.V(3).Infof("IPVS service %s was changed", svcName)
-			if err := proxier.ipvs.UpdateVirtualServer(vs); err != nil {
-				klog.Errorf("Failed to update IPVS service, err:%v", err)
-				return err
-			}
-		}
-	}
-
-	// bind service address to dummy interface even if service not changed,
-	// in case that service IP was removed by other processes
-	if bindAddr {
-		klog.V(4).Infof("Bind addr %s", vs.Address.String())
-		_, err := proxier.netlinkHandle.EnsureAddressBind(vs.Address.String(), DefaultDummyDevice)
-		if err != nil {
-			klog.Errorf("Failed to bind service address to dummy device %q: %v", svcName, err)
-			return err
-		}
-	}
-	return nil
-}
-
-func (proxier *Proxier) syncEndpoint(svcPortName proxy.ServicePortName, onlyNodeLocalEndpoints bool, vs *utilipvs.VirtualServer) error {
-	appliedVirtualServer, err := proxier.ipvs.GetVirtualServer(vs)
-	if err != nil || appliedVirtualServer == nil {
-		klog.Errorf("Failed to get IPVS service, error: %v", err)
-		return err
-	}
-
-	// curEndpoints represents IPVS destinations listed from current system.
-	curEndpoints := sets.NewString()
-	// newEndpoints represents Endpoints watched from API Server.
-	newEndpoints := sets.NewString()
-
-	curDests, err := proxier.ipvs.GetRealServers(appliedVirtualServer)
-	if err != nil {
-		klog.Errorf("Failed to list IPVS destinations, error: %v", err)
-		return err
-	}
-	for _, des := range curDests {
-		curEndpoints.Insert(des.String())
-	}
-
-	for _, epInfo := range proxier.endpointsMap[svcPortName] {
-		if onlyNodeLocalEndpoints && !epInfo.GetIsLocal() {
-			continue
-		}
-		newEndpoints.Insert(epInfo.String())
-	}
-
-	// Create new endpoints
-	for _, ep := range newEndpoints.List() {
-		ip, port, err := net.SplitHostPort(ep)
-		if err != nil {
-			klog.Errorf("Failed to parse endpoint: %v, error: %v", ep, err)
-			continue
-		}
-		portNum, err := strconv.Atoi(port)
-		if err != nil {
-			klog.Errorf("Failed to parse endpoint port %s, error: %v", port, err)
-			continue
-		}
-
-		newDest := &utilipvs.RealServer{
-			Address: net.ParseIP(ip),
-			Port:    uint16(portNum),
-			Weight:  1,
-		}
-
-		if curEndpoints.Has(ep) {
-			// check if newEndpoint is in gracefulDelete list, if true, delete this ep immediately
-			uniqueRS := GetUniqueRSName(vs, newDest)
-			if !proxier.gracefuldeleteManager.InTerminationList(uniqueRS) {
-				continue
-			}
-			klog.V(5).Infof("new ep %q is in graceful delete list", uniqueRS)
-			err := proxier.gracefuldeleteManager.MoveRSOutofGracefulDeleteList(uniqueRS)
-			if err != nil {
-				klog.Errorf("Failed to delete endpoint: %v in gracefulDeleteQueue, error: %v", ep, err)
-				continue
-			}
-		}
-		err = proxier.ipvs.AddRealServer(appliedVirtualServer, newDest)
-		if err != nil {
-			klog.Errorf("Failed to add destination: %v, error: %v", newDest, err)
-			continue
-		}
-	}
-	// Delete old endpoints
-	for _, ep := range curEndpoints.Difference(newEndpoints).UnsortedList() {
-		// if curEndpoint is in gracefulDelete, skip
-		uniqueRS := vs.String() + "/" + ep
-		if proxier.gracefuldeleteManager.InTerminationList(uniqueRS) {
-			continue
-		}
-		ip, port, err := net.SplitHostPort(ep)
-		if err != nil {
-			klog.Errorf("Failed to parse endpoint: %v, error: %v", ep, err)
-			continue
-		}
-		portNum, err := strconv.Atoi(port)
-		if err != nil {
-			klog.Errorf("Failed to parse endpoint port %s, error: %v", port, err)
-			continue
-		}
-
-		delDest := &utilipvs.RealServer{
-			Address: net.ParseIP(ip),
-			Port:    uint16(portNum),
-		}
-
-		klog.V(5).Infof("Using graceful delete to delete: %v", uniqueRS)
-		err = proxier.gracefuldeleteManager.GracefulDeleteRS(appliedVirtualServer, delDest)
-		if err != nil {
-			klog.Errorf("Failed to delete destination: %v, error: %v", uniqueRS, err)
-			continue
-		}
-	}
-	return nil
 }
 
 func (proxier *Proxier) cleanLegacyService(activeServices map[string]bool, currentServices map[string]*utilipvs.VirtualServer, legacyBindAddrs map[string]bool) {

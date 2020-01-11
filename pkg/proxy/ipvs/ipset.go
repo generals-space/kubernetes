@@ -31,9 +31,13 @@ const (
 	MinIPSetCheckVersion = "6.0"
 
 	kubeLoopBackIPSetComment = "Kubernetes endpoints dst ip:port, source ip for solving hairpin purpose"
+	// kubeLoopBackIPSet 作用于指定本机节点上的pod
 	kubeLoopBackIPSet        = "KUBE-LOOP-BACK"
 
 	kubeClusterIPSetComment = "Kubernetes service cluster ip + port for masquerade purpose"
+	// kubeClusterIPSet 的type为ip,port 存的是各service对象的clusterIP:port
+	// kube-dns服务有3个port(53/UDP,53/TCP,9153/TCP), 那么在这个ipset中, 
+	// 就会有3个成员, clusterIP相同而port不同.
 	kubeClusterIPSet        = "KUBE-CLUSTER-IP"
 
 	kubeExternalIPSetComment = "Kubernetes service external ip + port for masquerade and filter purpose"
@@ -89,6 +93,7 @@ type IPSetVersioner interface {
 	GetVersion() (string, error)
 }
 
+// IPSet 继承 utilipset.IPSet 结构
 // IPSet wraps util/ipset which is used by IPVS proxier.
 type IPSet struct {
 	utilipset.IPSet
