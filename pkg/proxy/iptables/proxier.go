@@ -193,6 +193,8 @@ type Proxier struct {
 	// These are effectively const and do not need the mutex to be held.
 	iptables       utiliptables.Interface
 	masqueradeAll  bool
+	// masqueradeMark iptables中masq操作其实是一个打标签的操作, 该变量为mark标签值.
+	// 需要注意的是, 在NewProxier()中该选项值的获取方式, 是通过fmt.Sprintf()完成的, 注意格式.
 	masqueradeMark string
 	exec           utilexec.Interface
 	clusterCIDR    string

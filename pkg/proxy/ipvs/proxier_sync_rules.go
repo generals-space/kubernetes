@@ -104,10 +104,14 @@ func (proxier *Proxier) syncProxyRules() {
 	// 所以需要把后者中没有的端口关掉, 然后替换为后者, 多退少补.
 	// Accumulate the set of local ports that we will be holding open once this update is complete
 	replacementPortsMap := map[utilproxy.LocalPort]utilproxy.Closeable{}
+	// activeIPVSServices 本轮操作中创建成功, 或已经存在的, 总之是状态正常的vs服务表.
+	// key为service对象的clusterIP:port, 没什么疑问.
 	// activeIPVSServices represents IPVS service successfully created in this round of sync
 	activeIPVSServices := map[string]bool{}
+	// 本轮sync操作时, 已经存在的ipvs虚拟服务.
 	// currentIPVSServices represent IPVS services listed from the system
 	currentIPVSServices := make(map[string]*utilipvs.VirtualServer)
+	// activeBindAddrs 本轮同步操作要绑定在dummy设备上的ip地址映射表, key为各service对象的clusterIP
 	// activeBindAddrs represents ip address successfully bind to DefaultDummyDevice in this round of sync
 	activeBindAddrs := map[string]bool{}
 
@@ -176,6 +180,9 @@ func (proxier *Proxier) syncProxyRules() {
 		svcNameString := svcName.String()
 
 		// Handle traffic that loops back to the originator with SNAT.
+		// 遍历ep对象, ep的指向目标是各个PodIP, 可能有些pod正好运行在当前节点上.
+		// 把ta们找出来, 然后添加到kubeLoopBackIPSet集合中. 之后在通过ep访问时,
+		// 就匹配一下, 如果成功, 说明目标pod就在当前主机上, 可以根据就近原则转发到本机上的pod.
 		fmt.Println("================ loop back chain start...")
 		for _, e := range proxier.endpointsMap[svcName] {
 			fmt.Printf("endpoint owned by %s map val: %+v\n", svcName, e)
@@ -184,8 +191,9 @@ func (proxier *Proxier) syncProxyRules() {
 				klog.Errorf("Failed to cast BaseEndpointInfo %q", e.String())
 				continue
 			}
-			// hostNetwork: true 则 islocal 为 true...???
-			// 如果并未使用hostNetwork, 就不需要添加loop back链, 只走集中转发.
+			// ~~hostNetwork: true 则 islocal 为 true...???~~
+			// ~~如果并未使用hostNetwork, 就不需要添加loop back链, 只走集中转发.~~
+			// 判断ep的目标在本机上的依据就是ep.IsLocal成员变量.
 			// if !ep.IsLocal {
 			// 	continue
 			// }
@@ -644,6 +652,7 @@ func (proxier *Proxier) syncProxyRules() {
 
 	// Get legacy bind address
 	// currentBindAddrs represents ip addresses bind to DefaultDummyDevice from the system
+	// dummy设备上当前已经绑定的ip列表
 	currentBindAddrs, err := proxier.netlinkHandle.ListBindAddress(DefaultDummyDevice)
 	if err != nil {
 		klog.Errorf("Failed to get bind address, err: %v", err)
@@ -653,6 +662,7 @@ func (proxier *Proxier) syncProxyRules() {
 	// Clean up legacy IPVS services and unbind addresses
 	appliedSvcs, err := proxier.ipvs.GetVirtualServers()
 	if err == nil {
+		// 获取当前系统中已经存在的ipvs虚拟服务并添加到currentIPVSServices映射表中.
 		for _, appliedSvc := range appliedSvcs {
 			currentIPVSServices[appliedSvc.String()] = appliedSvc
 		}
@@ -687,7 +697,8 @@ func (proxier *Proxier) syncProxyRules() {
 	proxier.deleteEndpointConnections(endpointUpdateResult.StaleEndpoints)
 }
 
-// syncService 判断ipvs服务是否存在以及是否被更改过, 如果不存在则创建, 被修改则更新, 防止由于服务状态不造成的操作失败.
+// syncService 判断ipvs的虚拟服务是否存在以及是否被更改过,
+// 如果不存在则创建, 被修改则更新, 防止由于服务状态不造成的操作失败.
 // caller: proxier.syncProxyRules() main loop
 func (proxier *Proxier) syncService(svcName string, vs *utilipvs.VirtualServer, bindAddr bool) error {
 	appliedVirtualServer, _ := proxier.ipvs.GetVirtualServer(vs)
@@ -717,6 +728,7 @@ func (proxier *Proxier) syncService(svcName string, vs *utilipvs.VirtualServer, 
 	// in case that service IP was removed by other processes
 	if bindAddr {
 		klog.V(4).Infof("Bind addr %s", vs.Address.String())
+		// 注意: dummy设备上的地址掩码位都是32...
 		_, err := proxier.netlinkHandle.EnsureAddressBind(vs.Address.String(), DefaultDummyDevice)
 		if err != nil {
 			klog.Errorf("Failed to bind service address to dummy device %q: %v", svcName, err)
@@ -726,7 +738,7 @@ func (proxier *Proxier) syncService(svcName string, vs *utilipvs.VirtualServer, 
 	return nil
 }
 
-// syncEndpoint 把endpoint中的条目同步到ipvs服务中.
+// syncEndpoint 把endpoint中的条目同步到ipvs服务中, 作为rs后端服务器.
 // caller: proxier.syncProxyRules() main loop
 func (proxier *Proxier) syncEndpoint(
 	svcPortName proxy.ServicePortName,

@@ -38,7 +38,8 @@ func NewNetLinkHandle(isIPv6 bool) NetLinkHandle {
 	return &netlinkHandle{netlink.Handle{}, isIPv6}
 }
 
-// EnsureAddressBind checks if address is bound to the interface and, if not, binds it. If the address is already bound, return true.
+// EnsureAddressBind checks if address is bound to the interface and, if not, binds it.
+// If the address is already bound, return true.
 func (h *netlinkHandle) EnsureAddressBind(address, devName string) (exist bool, err error) {
 	dev, err := h.LinkByName(devName)
 	if err != nil {

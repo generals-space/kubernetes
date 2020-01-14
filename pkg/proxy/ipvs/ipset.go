@@ -31,7 +31,11 @@ const (
 	MinIPSetCheckVersion = "6.0"
 
 	kubeLoopBackIPSetComment = "Kubernetes endpoints dst ip:port, source ip for solving hairpin purpose"
-	// kubeLoopBackIPSet 作用于指定本机节点上的pod
+	// kubeLoopBackIPSet 该集合中存储的都是当前集群中的endpoints, 但不是全部, 而是恰好在当前宿主机上的ep.
+	// 比如一个service下有两个pod, 那该service衍生的ep会有两个目标: PodIP1和PodIP2.
+	// 如果pod分别调度在两个不同的节点上, pod1在worker1上, pod2在worker2上, 
+	// 那么worker1上的kubeLoopBackIPSet就只有PodIP1, worker2则只有PodIP2.
+	// 名字叫作KUBE-LOOP-BACK应该是为了体现就近原则, 如果访问的目标Pod刚好在本机, 那么直接在本机处理不香吗?
 	kubeLoopBackIPSet        = "KUBE-LOOP-BACK"
 
 	kubeClusterIPSetComment = "Kubernetes service cluster ip + port for masquerade purpose"

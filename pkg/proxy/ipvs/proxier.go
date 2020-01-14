@@ -158,7 +158,7 @@ var ipsetInfo = []struct {
 	{kubeNodePortLocalSetSCTP, utilipset.HashIPPort, kubeNodePortLocalSetSCTPComment},
 }
 
-// ipsetWithIptablesChain 这里面都是要插入nat表中的规则, 所以每个成员都有from和to两个字段.
+// ipsetWithIptablesChain ipset各集合对应的iptables规则(都是nat表的, 所以每个成员都有from和to两个字段).
 // 当然, to其实也可能是RETURN操作.
 // 此数组在 proxier.writeIptablesRules() 函数中被遍历创建.
 // ipsetWithIptablesChain is the ipsets list with iptables source chain and the chain jump to
@@ -422,7 +422,9 @@ func NewProxier(ipt utiliptables.Interface,
 	}
 
 	// Generate the masquerade mark to use for SNAT rules.
+	// 其实就是2的14次方, 从右向左第15位为1, 只不过iptables的mark模块不能接受二进制标记, 所以要转换成16进制.
 	masqueradeValue := 1 << uint(masqueradeBit)
+	// fmt中格式的含义: `#`表示16进制, `x`表示输出将带有`0x`字样, 宽8位, 不足时左侧以0补齐.
 	masqueradeMark := fmt.Sprintf("%#08x/%#08x", masqueradeValue, masqueradeValue)
 
 	if nodeIP == nil {
@@ -906,14 +908,23 @@ func (proxier *Proxier) OnEndpointSlicesSynced() {
 // EntryInvalidErr indicates if an ipset entry is invalid or not
 const EntryInvalidErr = "error adding entry %s to ipset %s"
 
-// After a UDP endpoint has been removed, we must flush any pending conntrack entries to it, or else we
-// risk sending more traffic to it, all of which will be lost (because UDP).
+// deleteEndpointConnections 只用于UDP类型的端口
+// After a UDP endpoint has been removed, we must flush any pending conntrack entries to it, 
+// or else we risk sending more traffic to it, all of which will be lost (because UDP).
 // This assumes the proxier mutex is held
 func (proxier *Proxier) deleteEndpointConnections(connectionMap []proxy.ServiceEndpoint) {
 	for _, epSvcPair := range connectionMap {
-		if svcInfo, ok := proxier.serviceMap[epSvcPair.ServicePortName]; ok && svcInfo.Protocol() == v1.ProtocolUDP {
+		// svcInfo 为该 ep 所属的 svc 对象.
+		svcInfo, ok := proxier.serviceMap[epSvcPair.ServicePortName]
+		// 只处理UDP类型的port
+		if ok && svcInfo.Protocol() == v1.ProtocolUDP {
 			endpointIP := utilproxy.IPPart(epSvcPair.Endpoint)
-			err := conntrack.ClearEntriesForNAT(proxier.exec, svcInfo.ClusterIP().String(), endpointIP, v1.ProtocolUDP)
+			err := conntrack.ClearEntriesForNAT(
+				proxier.exec, 
+				svcInfo.ClusterIP().String(), 
+				endpointIP, 
+				v1.ProtocolUDP,
+			)
 			if err != nil {
 				klog.Errorf("Failed to delete %s endpoint connections, error: %v", epSvcPair.ServicePortName.String(), err)
 			}
@@ -933,17 +944,29 @@ func (proxier *Proxier) deleteEndpointConnections(connectionMap []proxy.ServiceE
 	}
 }
 
-func (proxier *Proxier) cleanLegacyService(activeServices map[string]bool, currentServices map[string]*utilipvs.VirtualServer, legacyBindAddrs map[string]bool) {
+// cleanLegacyService 清理遗留的ipvs虚拟服务. 实际上是清理在currentServices中, 但不在activeServices中的虚拟服务. 
+// 另外, 如果符合上述条件的IP地址同样存在于legacyBindAddrs映射中, 则将这个地址从dummy网络设备中删除.
+// @param activeServices: 本轮同步操作要绑定在dummy设备上的ip地址映射表, key为各service对象的clusterIP
+// @param currentServices: 本轮sync操作时, 已经存在的ipvs虚拟服务.
+func (proxier *Proxier) cleanLegacyService(
+	activeServices map[string]bool, 
+	currentServices map[string]*utilipvs.VirtualServer, 
+	legacyBindAddrs map[string]bool, 
+) {
 	isIPv6 := utilnet.IsIPv6(proxier.nodeIP)
 	for cs := range currentServices {
 		svc := currentServices[cs]
+		// svc地址不在集群内, 跳过(应该只有externalIP类型的service才会有这种情况吧).
 		if proxier.isIPInExcludeCIDRs(svc.Address) {
 			continue
 		}
+		// svc协议版本与node节点IP不匹配, 也跳过.
 		if utilnet.IsIPv6(svc.Address) != isIPv6 {
 			// Not our family
 			continue
 		}
+		// 找到在currentServices中, 但不在activeServices中的ip地址.
+		// 移除ipvs的虚拟服务, 同时移除dummy设备上该IP地址.
 		if _, ok := activeServices[cs]; !ok {
 			klog.V(4).Infof("Delete service %s", svc.String())
 			if err := proxier.ipvs.DeleteVirtualServer(svc); err != nil {
@@ -973,14 +996,20 @@ func (proxier *Proxier) isIPInExcludeCIDRs(ip net.IP) bool {
 	return false
 }
 
+// getLegacyBindAddr 找到在currentBindAddrs中, 但不在activeBindAddrs中的ip地址, 将ta们返回, 等待清理.
+// @param activeBindAddrs: 本轮同步操作要绑定在dummy设备上的ip地址映射表, key为各service对象的clusterIP
+// @param currentBindAddrs: dummy设备上当前已经绑定的ip列表.
+// caller: proxier.syncProxyRules()
 func (proxier *Proxier) getLegacyBindAddr(activeBindAddrs map[string]bool, currentBindAddrs []string) map[string]bool {
 	legacyAddrs := make(map[string]bool)
 	isIpv6 := utilnet.IsIPv6(proxier.nodeIP)
 	for _, addr := range currentBindAddrs {
 		addrIsIpv6 := utilnet.IsIPv6(net.ParseIP(addr))
+		// 略过与本机ip协议版本不同的地址(如本机node为ipv4, 但addr为ipv6, 或者反过来)
 		if addrIsIpv6 && !isIpv6 || !addrIsIpv6 && isIpv6 {
 			continue
 		}
+		// 找到在currentBindAddrs中, 但不在activeBindAddrs中的ip地址, 将ta们返回, 等待清理.
 		if _, ok := activeBindAddrs[addr]; !ok {
 			legacyAddrs[addr] = true
 		}
