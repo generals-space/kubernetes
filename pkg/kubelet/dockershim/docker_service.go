@@ -189,9 +189,20 @@ func NewDockerClientFromConfig(config *ClientConfig) libdocker.Interface {
 }
 
 // NewDockerService creates a new `DockerService` struct.
-// NOTE: Anything passed to DockerService should be eventually handled in another way when we switch to running the shim as a different process.
-func NewDockerService(config *ClientConfig, podSandboxImage string, streamingConfig *streaming.Config, pluginSettings *NetworkPluginSettings,
-	cgroupsName string, kubeCgroupDriver string, dockershimRootDir string, startLocalStreamingServer bool) (DockerService, error) {
+// NOTE: Anything passed to DockerService should be eventually handled in
+// another way when we switch to running the shim as a different process.
+// caller: cmd/kubelet/app/server.go -> RunDockershim(),
+// 		pkg/kubelet/kubelet.go -> NewMainKubelet()
+func NewDockerService(
+	config *ClientConfig,
+	podSandboxImage string,
+	streamingConfig *streaming.Config,
+	pluginSettings *NetworkPluginSettings,
+	cgroupsName string,
+	kubeCgroupDriver string,
+	dockershimRootDir string,
+	startLocalStreamingServer bool,
+) (DockerService, error) {
 
 	client := NewDockerClientFromConfig(config)
 
@@ -285,9 +296,11 @@ func NewDockerService(config *ClientConfig, podSandboxImage string, streamingCon
 	return ds, nil
 }
 
+// dockerService 实现 DockerService 接口
 type dockerService struct {
 	client           libdocker.Interface
 	os               kubecontainer.OSInterface
+	// 默认sandbox就是pause镜像, 这里写的是镜像地址(含版本).
 	podSandboxImage  string
 	streamingRuntime *streamingRuntime
 	streamingServer  streaming.Server

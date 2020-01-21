@@ -73,12 +73,15 @@ func (ds *dockerService) clearNetworkReady(podSandboxID string) {
 	delete(ds.networkReady, podSandboxID)
 }
 
-// RunPodSandbox creates and starts a pod-level sandbox. Runtimes should ensure
-// the sandbox is in ready state.
-// For docker, PodSandbox is implemented by a container holding the network
-// namespace for the pod.
+// RunPodSandbox creates and starts a pod-level sandbox. 
+// Runtimes should ensure the sandbox is in ready state.
+// For docker, PodSandbox is implemented by a container
+// holding the network namespace for the pod.
 // Note: docker doesn't use LogDirectory (yet).
-func (ds *dockerService) RunPodSandbox(ctx context.Context, r *runtimeapi.RunPodSandboxRequest) (*runtimeapi.RunPodSandboxResponse, error) {
+func (ds *dockerService) RunPodSandbox(
+	ctx context.Context, 
+	r *runtimeapi.RunPodSandboxRequest,
+) (*runtimeapi.RunPodSandboxResponse, error) {
 	config := r.GetConfig()
 
 	// Step 1: Pull the image for the sandbox.
@@ -88,7 +91,8 @@ func (ds *dockerService) RunPodSandbox(ctx context.Context, r *runtimeapi.RunPod
 		image = podSandboxImage
 	}
 
-	// NOTE: To use a custom sandbox image in a private repository, users need to configure the nodes with credentials properly.
+	// NOTE: To use a custom sandbox image in a private repository, 
+	// users need to configure the nodes with credentials properly.
 	// see: http://kubernetes.io/docs/user-guide/images/#configuring-nodes-to-authenticate-to-a-private-repository
 	// Only pull sandbox image when it's not present - v1.PullIfNotPresent.
 	if err := ensureSandboxImageExists(ds.client, image); err != nil {
@@ -610,7 +614,10 @@ func (ds *dockerService) applySandboxResources(hc *dockercontainer.HostConfig, l
 }
 
 // makeSandboxDockerConfig returns dockertypes.ContainerCreateConfig based on runtimeapi.PodSandboxConfig.
-func (ds *dockerService) makeSandboxDockerConfig(c *runtimeapi.PodSandboxConfig, image string) (*dockertypes.ContainerCreateConfig, error) {
+func (ds *dockerService) makeSandboxDockerConfig(
+	c *runtimeapi.PodSandboxConfig, 
+	image string,
+) (*dockertypes.ContainerCreateConfig, error) {
 	// Merge annotations and labels because docker supports only labels.
 	labels := makeLabels(c.GetLabels(), c.GetAnnotations())
 	// Apply a label to distinguish sandboxes from regular containers.

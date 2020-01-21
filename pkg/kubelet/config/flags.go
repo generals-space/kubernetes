@@ -46,6 +46,7 @@ type ContainerRuntimeOptions struct {
 	// DockershimRootDirectory is the path to the dockershim root directory. Defaults to
 	// /var/lib/dockershim if unset. Exposed for integration testing (e.g. in OpenShift).
 	DockershimRootDirectory string
+	// 默认为false, 在`kubelet -h`中不会显示, 只能手动指定, 具体可见本文件的 AddFlags() 函数.
 	// Enable dockershim only mode.
 	ExperimentalDockershim bool
 	// PodSandboxImage is the image whose network/ipc namespaces

@@ -170,9 +170,14 @@ func (cc *Controller) Bootstrap() (*kubeletconfig.KubeletConfiguration, error) {
 	return lastKnownGoodConfig, nil
 }
 
-// StartSync tells the controller to start the goroutines that sync status/config to/from the API server.
+// StartSync tells the controller to start the goroutines that
+// sync status/config to/from the API server.
 // The clients must be non-nil, and the nodeName must be non-empty.
-func (cc *Controller) StartSync(client clientset.Interface, eventClient v1core.EventsGetter, nodeName string) error {
+func (cc *Controller) StartSync(
+	client clientset.Interface, 
+	eventClient v1core.EventsGetter, 
+	nodeName string,
+) error {
 	const errFmt = "cannot start Kubelet config sync: %s"
 	if client == nil {
 		return fmt.Errorf(errFmt, "nil client")

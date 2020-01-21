@@ -151,6 +151,9 @@ func ProbeNetworkPlugins(confDir, cacheDir string, binDirs []string) []network.N
 	return []network.NetworkPlugin{plugin}
 }
 
+// getDefaultCNINetwork 检查/etc/cni/net.d/目录下, 寻找类似
+// 10-calico.conflist, 10-flannel.conf这类的文件.
+// caller: syncNetworkConfig()
 func getDefaultCNINetwork(confDir string, binDirs []string) (*cniNetwork, error) {
 	files, err := libcni.ConfFiles(confDir, []string{".conf", ".conflist", ".json"})
 	switch {
@@ -246,6 +249,7 @@ func (plugin *cniNetworkPlugin) getDefaultNetwork() *cniNetwork {
 	return plugin.defaultNetwork
 }
 
+// setDefaultNetwork 设置plugin.defaultNetwork 为 n
 func (plugin *cniNetworkPlugin) setDefaultNetwork(n *cniNetwork) {
 	plugin.Lock()
 	defer plugin.Unlock()

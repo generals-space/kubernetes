@@ -247,6 +247,9 @@ func NodeAllocatableRoot(cgroupRoot, cgroupDriver string) string {
 	return nodeAllocatableRoot.ToCgroupfs()
 }
 
+// GetKubeletContainer 其实就是判断了一下 kubeletCgroups 为空的情况, 
+// 为空的时候访问/proc/$pid/cgroup文件取得真实的cgroup名称.
+// caller: cmd/kubelet/app/server.go -> run()
 // GetKubeletContainer returns the cgroup the kubelet will use
 func GetKubeletContainer(kubeletCgroups string) (string, error) {
 	if kubeletCgroups == "" {
@@ -259,7 +262,10 @@ func GetKubeletContainer(kubeletCgroups string) (string, error) {
 	return kubeletCgroups, nil
 }
 
+// GetRuntimeContainer 这是获取docker进程的cgroup名称, GetKubeletContainer()
+// 则是为了获取当前kubelet的cgroup名称.
 // GetRuntimeContainer returns the cgroup used by the container runtime
+// @param containerRuntime: 可选值有docker, remote, 一般为docker, 在kubelet的命令行参数中指定.
 func GetRuntimeContainer(containerRuntime, runtimeCgroups string) (string, error) {
 	if containerRuntime == "docker" {
 		cont, err := getContainerNameForProcess(dockerProcessName, dockerPidFile)

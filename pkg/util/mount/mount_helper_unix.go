@@ -79,6 +79,7 @@ type MountInfo struct {
 	SuperOptions []string
 }
 
+// ParseMountInfo 解析指定进程的mount信息文件(一般在/proc/$pid/mountinfo)的内容为MountInfo数组.
 // ParseMountInfo parses /proc/xxx/mountinfo.
 func ParseMountInfo(filename string) ([]MountInfo, error) {
 	content, err := utilio.ConsistentRead(filename, maxListTries)

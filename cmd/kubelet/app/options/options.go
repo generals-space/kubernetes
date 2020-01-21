@@ -61,6 +61,7 @@ type KubeletFlags struct {
 	// Crash immediately, rather than eating panics.
 	ReallyCrashForTesting bool
 
+	// RunOnce 对应kubelet的--runonce选项, 拉取apiserver的信息, 同步资源并检测static pod状态, 然后退出.
 	// TODO(mtaufen): It is increasingly looking like nobody actually uses the
 	//                Kubelet's runonce mode anymore, so it may be a candidate
 	//                for deprecation and removal.
@@ -68,6 +69,7 @@ type KubeletFlags struct {
 	// run those in addition to the pods specified by static pod files, and exit.
 	RunOnce bool
 
+	// EnableServer --enable-server选项, 默认为true
 	// enableServer enables the Kubelet's server
 	EnableServer bool
 
@@ -98,6 +100,7 @@ type KubeletFlags struct {
 	// +optional
 	CloudConfigFile string
 
+	// rootDirectory 默认为 /var/lib/kubelet 
 	// rootDirectory is the directory path to place kubelet files (volume
 	// mounts,etc).
 	RootDirectory string
