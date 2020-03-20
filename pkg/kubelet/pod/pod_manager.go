@@ -101,8 +101,8 @@ type Manager interface {
 
 // basicManager is a functional Manager.
 //
-// All fields in basicManager are read-only and are updated calling SetPods,
-// AddPod, UpdatePod, or DeletePod.
+// All fields in basicManager are read-only and are updated calling
+// SetPods, AddPod, UpdatePod, or DeletePod.
 type basicManager struct {
 	// Protects all internal maps.
 	lock sync.RWMutex
@@ -129,7 +129,12 @@ type basicManager struct {
 }
 
 // NewBasicPodManager returns a functional Manager.
-func NewBasicPodManager(client MirrorClient, secretManager secret.Manager, configMapManager configmap.Manager, cpm checkpointmanager.CheckpointManager) Manager {
+func NewBasicPodManager(
+	client MirrorClient, 
+	secretManager secret.Manager, 
+	configMapManager configmap.Manager, 
+	cpm checkpointmanager.CheckpointManager,
+) Manager {
 	pm := &basicManager{}
 	pm.secretManager = secretManager
 	pm.configMapManager = configMapManager
@@ -173,8 +178,8 @@ func isPodInTerminatedState(pod *v1.Pod) bool {
 }
 
 // updatePodsInternal replaces the given pods in the current state of the
-// manager, updating the various indices. The caller is assumed to hold the
-// lock.
+// manager, updating the various indices. 
+// The caller is assumed to hold the lock.
 func (pm *basicManager) updatePodsInternal(pods ...*v1.Pod) {
 	for _, pod := range pods {
 		if pm.secretManager != nil {

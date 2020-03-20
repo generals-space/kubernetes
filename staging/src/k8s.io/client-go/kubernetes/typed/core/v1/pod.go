@@ -111,7 +111,8 @@ func (c *pods) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 		Watch()
 }
 
-// Create takes the representation of a pod and creates it.  Returns the server's representation of the pod, and an error, if there is any.
+// Create takes the representation of a pod and creates it. 
+// Returns the server's representation of the pod, and an error, if there is any.
 func (c *pods) Create(pod *v1.Pod) (result *v1.Pod, err error) {
 	result = &v1.Pod{}
 	err = c.client.Post().

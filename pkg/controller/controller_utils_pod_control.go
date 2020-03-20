@@ -95,7 +95,11 @@ func validateControllerRef(controllerRef *metav1.OwnerReference) error {
 	return nil
 }
 
-func (r RealPodControl) CreatePods(namespace string, template *v1.PodTemplateSpec, object runtime.Object) error {
+func (r RealPodControl) CreatePods(
+	namespace string, 
+	template *v1.PodTemplateSpec, 
+	object runtime.Object,
+) error {
 	return r.createPods("", namespace, template, object, nil)
 }
 

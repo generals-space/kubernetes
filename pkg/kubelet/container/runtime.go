@@ -243,11 +243,11 @@ const (
 	ContainerStateUnknown ContainerState = "unknown"
 )
 
-// Container provides the runtime information for a container, such as ID, hash,
-// state of the container.
+// Container provides the runtime information for a container, 
+// such as ID, hash, state of the container.
 type Container struct {
-	// The ID of the container, used by the container runtime to identify
-	// a container.
+	// The ID of the container, used by the container runtime to
+	// identify a container.
 	ID ContainerID
 	// The name of the container, which should be the same as specified by
 	// v1.Container.
@@ -314,8 +314,10 @@ type ContainerStatus struct {
 	Message string
 }
 
-// FindContainerStatusByName returns container status in the pod status with the given name.
-// When there are multiple containers' statuses with the same name, the first match will be returned.
+// FindContainerStatusByName returns container status 
+// in the pod status with the given name.
+// When there are multiple containers' statuses with the same name, 
+// the first match will be returned.
 func (podStatus *PodStatus) FindContainerStatusByName(containerName string) *ContainerStatus {
 	for _, containerStatus := range podStatus.ContainerStatuses {
 		if containerStatus.Name == containerName {
