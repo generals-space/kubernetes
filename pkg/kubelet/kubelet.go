@@ -1415,6 +1415,7 @@ func (kl *Kubelet) syncLoop(updates <-chan kubetypes.PodUpdate, handler SyncHand
 // 4.  housekeepingCh: a channel to read housekeeping events from
 // 5.  plegCh:         a channel to read PLEG updates from
 //
+// 其实参数 handler 就是 kl 对象本身.
 // Events are also read from the kubelet liveness manager's update channel.
 //
 // The workflow is to read from one of the channels, handle that event, and
@@ -1423,8 +1424,9 @@ func (kl *Kubelet) syncLoop(updates <-chan kubetypes.PodUpdate, handler SyncHand
 // Here is an appropriate place to note that despite the syntactical
 // similarity to the switch statement, the case statements in a select are
 // evaluated in a pseudorandom order if there are multiple channels ready to
-// read from when the select is evaluated.  In other words, case statements
-// are evaluated in random order, and you can not assume that the case
+// read from when the select is evaluated. 
+// In other words, case statements are evaluated in random order, 
+// and you can not assume that the case
 // statements evaluate in order if multiple channels have events.
 //
 // With that in mind, in truly no particular order, the different channels
@@ -1437,12 +1439,16 @@ func (kl *Kubelet) syncLoop(updates <-chan kubetypes.PodUpdate, handler SyncHand
 // * housekeepingCh: trigger cleanup of pods
 // * liveness manager: sync pods that have failed or in which one or more
 //                     containers have failed liveness checks
-func (kl *Kubelet) syncLoopIteration(configCh <-chan kubetypes.PodUpdate, handler SyncHandler,
-	syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.PodLifecycleEvent) bool {
+func (kl *Kubelet) syncLoopIteration(
+	configCh <-chan kubetypes.PodUpdate, 
+	handler SyncHandler,
+	syncCh <-chan time.Time, 
+	housekeepingCh <-chan time.Time, 
+	plegCh <-chan *pleg.PodLifecycleEvent,
+) bool {
 	select {
 	case u, open := <-configCh:
-		// Update from a config source; dispatch it to the right handler
-		// callback.
+		// Update from a config source; dispatch it to the right handler callback.
 		if !open {
 			klog.Errorf("Update channel is closed. Exiting the sync loop.")
 			return false
@@ -1600,9 +1606,9 @@ func (kl *Kubelet) HandlePodAdditions(pods []*v1.Pod) {
 	for _, pod := range pods {
 		existingPods := kl.podManager.GetPods()
 		// Always add the pod to the pod manager. Kubelet relies on the pod
-		// manager as the source of truth for the desired state. If a pod does
-		// not exist in the pod manager, it means that it has been deleted in
-		// the apiserver and no action (other than cleanup) is required.
+		// manager as the source of truth for the desired state. 
+		// If a pod does not exist in the pod manager, it means that 
+		// it has been deleted in the apiserver and no action (other than cleanup) is required.
 		kl.podManager.AddPod(pod)
 
 		if kubepod.IsMirrorPod(pod) {

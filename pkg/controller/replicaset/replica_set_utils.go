@@ -32,11 +32,22 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 )
 
-// updateReplicaSetStatus attempts to update the Status.Replicas of the given ReplicaSet, with a single GET/PUT retry.
-func updateReplicaSetStatus(c appsclient.ReplicaSetInterface, rs *apps.ReplicaSet, newStatus apps.ReplicaSetStatus) (*apps.ReplicaSet, error) {
-	// This is the steady state. It happens when the ReplicaSet doesn't have any expectations, since
-	// we do a periodic relist every 30s. If the generations differ but the replicas are
-	// the same, a caller might've resized to the same replica count.
+// updateReplicaSetStatus 不停地尝试, 根据newStatus使RS能达到期望状态.
+// @param c: ReplicaSetInterface 接口在如下文件中声明 
+// staging/src/k8s.io/client-go/kubernetes/typed/apps/v1/replicaset.go
+// updateReplicaSetStatus attempts to update the Status.Replicas
+// of the given ReplicaSet, with a single GET/PUT retry.
+func updateReplicaSetStatus(
+	c appsclient.ReplicaSetInterface,
+	rs *apps.ReplicaSet, 
+	newStatus apps.ReplicaSetStatus,
+) (*apps.ReplicaSet, error) {
+	// 如果此if条件满足, 表示已经处于稳定状态, 不需要再做额外操作, 可以直接返回.
+	// This is the steady state. 
+	// It happens when the ReplicaSet doesn't have any expectations, 
+	// since we do a periodic relist every 30s. 
+	// If the generations differ but the replicas are the same, 
+	// a caller might've resized to the same replica count.
 	if rs.Status.Replicas == newStatus.Replicas &&
 		rs.Status.FullyLabeledReplicas == newStatus.FullyLabeledReplicas &&
 		rs.Status.ReadyReplicas == newStatus.ReadyReplicas &&
@@ -48,33 +59,37 @@ func updateReplicaSetStatus(c appsclient.ReplicaSetInterface, rs *apps.ReplicaSe
 
 	// Save the generation number we acted on, otherwise we might wrongfully indicate
 	// that we've seen a spec update when we retry.
-	// TODO: This can clobber an update if we allow multiple agents to write to the
-	// same status.
+	// TODO: This can clobber an update if we allow multiple agents to 
+	// write to the same status.
 	newStatus.ObservedGeneration = rs.Generation
 
 	var getErr, updateErr error
 	var updatedRS *apps.ReplicaSet
+	// 这是一个无限循环, 只有达到期望状态才可能结束退出.
 	for i, rs := 0, rs; ; i++ {
-		klog.V(4).Infof(fmt.Sprintf("Updating status for %v: %s/%s, ", rs.Kind, rs.Namespace, rs.Name) +
+		klog.V(4).Infof(
+			fmt.Sprintf("Updating status for %v: %s/%s, ", rs.Kind, rs.Namespace, rs.Name) +
 			fmt.Sprintf("replicas %d->%d (need %d), ", rs.Status.Replicas, newStatus.Replicas, *(rs.Spec.Replicas)) +
 			fmt.Sprintf("fullyLabeledReplicas %d->%d, ", rs.Status.FullyLabeledReplicas, newStatus.FullyLabeledReplicas) +
 			fmt.Sprintf("readyReplicas %d->%d, ", rs.Status.ReadyReplicas, newStatus.ReadyReplicas) +
 			fmt.Sprintf("availableReplicas %d->%d, ", rs.Status.AvailableReplicas, newStatus.AvailableReplicas) +
-			fmt.Sprintf("sequence No: %v->%v", rs.Status.ObservedGeneration, newStatus.ObservedGeneration))
+			fmt.Sprintf("sequence No: %v->%v", rs.Status.ObservedGeneration, newStatus.ObservedGeneration),
+		)
 
 		rs.Status = newStatus
 		updatedRS, updateErr = c.UpdateStatus(rs)
 		if updateErr == nil {
 			return updatedRS, nil
 		}
-		// Stop retrying if we exceed statusUpdateRetries - the replicaSet will be requeued with a rate limit.
+		// Stop retrying if we exceed statusUpdateRetries,
+		// the replicaSet will be requeued with a rate limit.
 		if i >= statusUpdateRetries {
 			break
 		}
 		// Update the ReplicaSet with the latest resource version for the next poll
 		if rs, getErr = c.Get(rs.Name, metav1.GetOptions{}); getErr != nil {
-			// If the GET fails we can't trust status.Replicas anymore. This error
-			// is bound to be more interesting than the update failure.
+			// If the GET fails we can't trust status.Replicas anymore.
+			// This error is bound to be more interesting than the update failure.
 			return nil, getErr
 		}
 	}
@@ -82,13 +97,23 @@ func updateReplicaSetStatus(c appsclient.ReplicaSetInterface, rs *apps.ReplicaSe
 	return nil, updateErr
 }
 
-func calculateStatus(rs *apps.ReplicaSet, filteredPods []*v1.Pod, manageReplicasErr error) apps.ReplicaSetStatus {
+// calculateStatus 计算现在已经启动了多少Pod, 以及最终应该有几个Pod, 
+// 返回的status对象就带有这些描述信息.
+// @param filteredPods: 所有属于rs的且处于active状态的Pod.
+func calculateStatus(
+	rs *apps.ReplicaSet, 
+	filteredPods []*v1.Pod, 
+	manageReplicasErr error,
+) apps.ReplicaSetStatus {
 	newStatus := rs.Status
-	// Count the number of pods that have labels matching the labels of the pod
-	// template of the replica set, the matching pods may have more
-	// labels than are in the template. Because the label of podTemplateSpec is
-	// a superset of the selector of the replica set, so the possible
-	// matching pods must be part of the filteredPods.
+	// 遍历 filteredPods 数组, 数一下符合部署文件中RS部分的label的Pod的数量, 
+	// 当然实际上这些Pod所含有的label可能比在部署文件中定义要多(毕竟可以用patch直接修改)
+	// Count the number of pods that have labels matching the labels
+	// of the pod template of the replica set, 
+	// the matching pods may have more labels than are in the template. 
+	// Because the label of podTemplateSpec is
+	// a superset of the selector of the replica set, 
+	// so the possible matching pods must be part of the filteredPods.
 	fullyLabeledReplicasCount := 0
 	readyReplicasCount := 0
 	availableReplicasCount := 0
@@ -126,8 +151,14 @@ func calculateStatus(rs *apps.ReplicaSet, filteredPods []*v1.Pod, manageReplicas
 	return newStatus
 }
 
+// NewReplicaSetCondition Condition对象表示一个RS最终应该处于什么样的状态才算稳定,
+// 然后RS的controller会努力得到这样的状态并维持ta.
 // NewReplicaSetCondition creates a new replicaset condition.
-func NewReplicaSetCondition(condType apps.ReplicaSetConditionType, status v1.ConditionStatus, reason, msg string) apps.ReplicaSetCondition {
+func NewReplicaSetCondition(
+	condType apps.ReplicaSetConditionType, 
+	status v1.ConditionStatus, 
+	reason, msg string,
+) apps.ReplicaSetCondition {
 	return apps.ReplicaSetCondition{
 		Type:               condType,
 		Status:             status,
@@ -138,7 +169,10 @@ func NewReplicaSetCondition(condType apps.ReplicaSetConditionType, status v1.Con
 }
 
 // GetCondition returns a replicaset condition with the provided type if it exists.
-func GetCondition(status apps.ReplicaSetStatus, condType apps.ReplicaSetConditionType) *apps.ReplicaSetCondition {
+func GetCondition(
+	status apps.ReplicaSetStatus, 
+	condType apps.ReplicaSetConditionType,
+) *apps.ReplicaSetCondition {
 	for _, c := range status.Conditions {
 		if c.Type == condType {
 			return &c
@@ -147,11 +181,17 @@ func GetCondition(status apps.ReplicaSetStatus, condType apps.ReplicaSetConditio
 	return nil
 }
 
+// SetCondition 把 condition 附加到 status 对象的 Conditions 数组中.
 // SetCondition adds/replaces the given condition in the replicaset status. If the condition that we
 // are about to add already exists and has the same status and reason then we are not going to update.
-func SetCondition(status *apps.ReplicaSetStatus, condition apps.ReplicaSetCondition) {
+func SetCondition(
+	status *apps.ReplicaSetStatus, 
+	condition apps.ReplicaSetCondition,
+) {
 	currentCond := GetCondition(*status, condition.Type)
-	if currentCond != nil && currentCond.Status == condition.Status && currentCond.Reason == condition.Reason {
+	if currentCond != nil && 
+		currentCond.Status == condition.Status && 
+		currentCond.Reason == condition.Reason {
 		return
 	}
 	newConditions := filterOutCondition(status.Conditions, condition.Type)

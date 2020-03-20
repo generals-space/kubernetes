@@ -68,6 +68,7 @@ type streamExecutor struct {
 	protocols []string
 }
 
+// NewSPDYExecutor spdy协议, 应该是与http2同级的http扩展协议, 能实现类似tcp的双向通信.
 // NewSPDYExecutor connects to the provided server and upgrades the connection to
 // multiplexed bidirectional streams.
 func NewSPDYExecutor(config *restclient.Config, method string, url *url.URL) (Executor, error) {

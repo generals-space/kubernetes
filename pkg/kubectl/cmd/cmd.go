@@ -484,6 +484,9 @@ func NewKubectlCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 
 	ioStreams := genericclioptions.IOStreams{In: in, Out: out, ErrOut: err}
 
+	// groups结构中没有明确地写出create, apply, delete等可用的子命令,
+	// 但其实`create.NewCmdCreate()`, 指的就是`create`,
+	// `cmdexec.NewCmdExec()`, 指的就是`exec`.
 	groups := templates.CommandGroups{
 		{
 			Message: "Basic Commands (Beginner):",

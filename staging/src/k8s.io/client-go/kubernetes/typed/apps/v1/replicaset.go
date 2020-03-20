@@ -139,8 +139,9 @@ func (c *replicaSets) Update(replicaSet *v1.ReplicaSet) (result *v1.ReplicaSet, 
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-
-func (c *replicaSets) UpdateStatus(replicaSet *v1.ReplicaSet) (result *v1.ReplicaSet, err error) {
+func (c *replicaSets) UpdateStatus(
+	replicaSet *v1.ReplicaSet,
+) (result *v1.ReplicaSet, err error) {
 	result = &v1.ReplicaSet{}
 	err = c.client.Put().
 		Namespace(c.ns).
@@ -165,7 +166,10 @@ func (c *replicaSets) Delete(name string, options *metav1.DeleteOptions) error {
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *replicaSets) DeleteCollection(options *metav1.DeleteOptions, listOptions metav1.ListOptions) error {
+func (c *replicaSets) DeleteCollection(
+	options *metav1.DeleteOptions, 
+	listOptions metav1.ListOptions,
+) error {
 	var timeout time.Duration
 	if listOptions.TimeoutSeconds != nil {
 		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second

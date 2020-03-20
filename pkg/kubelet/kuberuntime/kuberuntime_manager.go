@@ -77,6 +77,7 @@ type podStateProvider interface {
 	IsPodTerminated(kubetypes.UID) bool
 }
 
+// kubeGenericRuntimeManager 应该是实现了`pkg/kubelet/container/runtime.go`中的`Runtime`接口.
 type kubeGenericRuntimeManager struct {
 	runtimeName         string
 	recorder            record.EventRecorder

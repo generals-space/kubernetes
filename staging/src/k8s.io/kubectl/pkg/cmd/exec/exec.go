@@ -110,6 +110,7 @@ type RemoteExecutor interface {
 // DefaultRemoteExecutor is the standard implementation of remote command execution
 type DefaultRemoteExecutor struct{}
 
+// Execute exec子命令的实际执行者
 func (*DefaultRemoteExecutor) Execute(method string, url *url.URL, config *restclient.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool, terminalSizeQueue remotecommand.TerminalSizeQueue) error {
 	exec, err := remotecommand.NewSPDYExecutor(config, method, url)
 	if err != nil {
@@ -163,6 +164,7 @@ type ExecOptions struct {
 	Config        *restclient.Config
 }
 
+// Complete 为初始的ExecOptions对象补充上必要的成员, 如Command, PodClient等.
 // Complete verifies command line arguments and loads data from the command environment
 func (p *ExecOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn []string, argsLenAtDash int) error {
 	// Let kubectl exec follow rules for `--`, see #13004 issue
@@ -306,11 +308,11 @@ func (p *ExecOptions) Run() error {
 	}
 
 	pod := p.Pod
-
+	// 确认目标Pod处于正常的运行状态.
 	if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 		return fmt.Errorf("cannot exec into a container in a completed pod; current phase is %s", pod.Status.Phase)
 	}
-
+	// 默认exec是不需要指定 container 名称的, 但有时Pod中可能包含多个container, 此时必须要指定.
 	containerName := p.ContainerName
 	if len(containerName) == 0 {
 		if len(pod.Spec.Containers) > 1 {
