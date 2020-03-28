@@ -84,26 +84,47 @@ func (m *kubeGenericRuntimeManager) recordContainerEvent(pod *v1.Pod, container 
 	m.recorder.Event(ref, eventType, reason, eventMessage)
 }
 
-// startContainer starts a container and returns a message indicates why it is failed on error.
+// startContainer starts a container and returns a message 
+// indicates why it is failed on error.
 // It starts the container through the following steps:
 // * pull the image
 // * create the container
 // * start the container
 // * run the post start lifecycle hooks (if applicable)
-// caller: kuberuntime_manager.go -> SyncPod()
-func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandboxConfig *runtimeapi.PodSandboxConfig, container *v1.Container, pod *v1.Pod, podStatus *kubecontainer.PodStatus, pullSecrets []v1.Secret, podIP string) (string, error) {
+// caller: kuberuntime_manager.go -> SyncPod() 只有这一处.
+func (m *kubeGenericRuntimeManager) startContainer(
+	podSandboxID string, 
+	podSandboxConfig *runtimeapi.PodSandboxConfig, 
+	container *v1.Container, 
+	pod *v1.Pod, 
+	podStatus *kubecontainer.PodStatus, 
+	pullSecrets []v1.Secret, 
+	podIP string,
+) (string, error) {
 	// Step 1: pull the image.
-	imageRef, msg, err := m.imagePuller.EnsureImageExists(pod, container, pullSecrets, podSandboxConfig)
+	imageRef, msg, err := m.imagePuller.EnsureImageExists(
+							pod, container, pullSecrets, podSandboxConfig,
+						)
 	if err != nil {
 		s, _ := grpcstatus.FromError(err)
-		m.recordContainerEvent(pod, container, "", v1.EventTypeWarning, events.FailedToCreateContainer, "Error: %v", s.Message())
+		m.recordContainerEvent(
+			pod, 
+			container, 
+			"", 
+			v1.EventTypeWarning, 
+			events.FailedToCreateContainer, 
+			"Error: %v", 
+			s.Message(),
+		)
 		return msg, err
 	}
 
 	// Step 2: create the container.
 	ref, err := kubecontainer.GenerateContainerRef(pod, container)
 	if err != nil {
-		klog.Errorf("Can't make a ref to pod %q, container %v: %v", format.Pod(pod), container.Name, err)
+		klog.Errorf("Can't make a ref to pod %q, container %v: %v", 
+			format.Pod(pod), container.Name, err,
+		)
 	}
 	klog.V(4).Infof("Generating ref for container %s: %#v", container.Name, ref)
 
@@ -124,19 +145,33 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 		return s.Message(), ErrCreateContainerConfig
 	}
 
-	containerID, err := m.runtimeService.CreateContainer(podSandboxID, containerConfig, podSandboxConfig)
+	containerID, err := m.runtimeService.CreateContainer(
+		podSandboxID, containerConfig, podSandboxConfig,
+	)
 	if err != nil {
 		s, _ := grpcstatus.FromError(err)
-		m.recordContainerEvent(pod, container, containerID, v1.EventTypeWarning, events.FailedToCreateContainer, "Error: %v", s.Message())
+		m.recordContainerEvent(
+			pod, container, containerID, v1.EventTypeWarning, 
+			events.FailedToCreateContainer, "Error: %v", s.Message(),
+		)
 		return s.Message(), ErrCreateContainer
 	}
 	err = m.internalLifecycle.PreStartContainer(pod, container, containerID)
 	if err != nil {
 		s, _ := grpcstatus.FromError(err)
-		m.recordContainerEvent(pod, container, containerID, v1.EventTypeWarning, events.FailedToStartContainer, "Internal PreStartContainer hook failed: %v", s.Message())
+		m.recordContainerEvent(
+			pod, container, containerID, 
+			v1.EventTypeWarning, 
+			events.FailedToStartContainer, 
+			"Internal PreStartContainer hook failed: %v", s.Message(),
+		)
 		return s.Message(), ErrPreStartHook
 	}
-	m.recordContainerEvent(pod, container, containerID, v1.EventTypeNormal, events.CreatedContainer, fmt.Sprintf("Created container %s", container.Name))
+	m.recordContainerEvent(
+		pod, container, containerID, 
+		v1.EventTypeNormal, events.CreatedContainer, 
+		fmt.Sprintf("Created container %s", container.Name),
+	)
 
 	if ref != nil {
 		m.containerRefManager.SetRef(kubecontainer.ContainerID{
@@ -149,7 +184,12 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 	err = m.runtimeService.StartContainer(containerID)
 	if err != nil {
 		s, _ := grpcstatus.FromError(err)
-		m.recordContainerEvent(pod, container, containerID, v1.EventTypeWarning, events.FailedToStartContainer, "Error: %v", s.Message())
+		m.recordContainerEvent(
+			pod, container, containerID, 
+			v1.EventTypeWarning, 
+			events.FailedToStartContainer, 
+			"Error: %v", s.Message(),
+		)
 		return s.Message(), kubecontainer.ErrRunContainer
 	}
 	m.recordContainerEvent(pod, container, containerID, v1.EventTypeNormal, events.StartedContainer, fmt.Sprintf("Started container %s", container.Name))
@@ -669,10 +709,13 @@ func (m *kubeGenericRuntimeManager) pruneInitContainersBeforeStart(pod *v1.Pod, 
 	}
 }
 
-// Remove all init containres. Note that this function does not check the state
-// of the container because it assumes all init containers have been stopped
+// Remove all init containres.
+// Note that this function does not check the state of the container because 
+// it assumes all init containers have been stopped
 // before the call happens.
-func (m *kubeGenericRuntimeManager) purgeInitContainers(pod *v1.Pod, podStatus *kubecontainer.PodStatus) {
+func (m *kubeGenericRuntimeManager) purgeInitContainers(
+	pod *v1.Pod, podStatus *kubecontainer.PodStatus,
+) {
 	initContainerNames := sets.NewString()
 	for _, container := range pod.Spec.InitContainers {
 		initContainerNames.Insert(container.Name)

@@ -58,11 +58,11 @@ type ContainerManager interface {
 	ReopenContainerLog(ContainerID string) error
 }
 
-// PodSandboxManager contains methods for operating on PodSandboxes. The methods
-// are thread-safe.
+// PodSandboxManager contains methods for operating on PodSandboxes. 
+// The methods are thread-safe.
 type PodSandboxManager interface {
-	// RunPodSandbox creates and starts a pod-level sandbox. Runtimes should ensure
-	// the sandbox is in ready state.
+	// RunPodSandbox creates and starts a pod-level sandbox. 
+	// Runtimes should ensure the sandbox is in ready state.
 	RunPodSandbox(config *runtimeapi.PodSandboxConfig, runtimeHandler string) (string, error)
 	// StopPodSandbox stops the sandbox. If there are any running containers in the
 	// sandbox, they should be force terminated.

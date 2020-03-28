@@ -34,10 +34,14 @@ import (
 )
 
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
-func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32) (string, string, error) {
+func (m *kubeGenericRuntimeManager) createPodSandbox(
+	pod *v1.Pod, attempt uint32,
+) (string, string, error) {
 	podSandboxConfig, err := m.generatePodSandboxConfig(pod, attempt)
 	if err != nil {
-		message := fmt.Sprintf("GeneratePodSandboxConfig for pod %q failed: %v", format.Pod(pod), err)
+		message := fmt.Sprintf("GeneratePodSandboxConfig for pod %q failed: %v", 
+					format.Pod(pod), err,
+				)
 		klog.Error(message)
 		return "", message, err
 	}
