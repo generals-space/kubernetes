@@ -187,8 +187,8 @@ func (s *ProxyServer) Run() error {
 	// because sources only notify on changes, 
 	// and the initial update (on process start) may be lost if no handlers
 	// are registered yet.
-	// 可以说, proxy也算是一个控制器, ta需要监听service/endpoints资源的变动, 
-	// 然后修改自己的转发规则, 与controller的思路相同.
+	// 可以说, proxy组件也算是一个控制器, ta需要监听service/endpoints资源的变动, 
+	// 然后修改自己的转发规则, 与CRD的思路相同.
 	// 处理函数也在ServiceConfig各自的方法中, 不过最终调用的还是s.Proxier接口对象中的
 	// OnServiceAdd/Update/Delete等方法, 就是在s.Proxier中定义的方法.
 	// proxier就是ipvs/iptables/userspace模型, 在service_others.go -> newProxyServer()中初始化.

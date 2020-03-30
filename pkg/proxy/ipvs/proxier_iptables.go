@@ -9,9 +9,11 @@ import (
 
 )
 
-// createAndLinkeKubeChain 创建ipvs所需的iptables规则, 在调用前, 主调函数已经将存储区reset过了.
+// createAndLinkeKubeChain 创建ipvs所需的iptables规则.
+// 在调用前, 主调函数已经将存储区reset过了.
 // caller: syncProxyRules()
-// createAndLinkeKubeChain create all kube chains that ipvs proxier need and write basic link.
+// createAndLinkeKubeChain create all kube chains that
+//  ipvs proxier need and write basic link.
 func (proxier *Proxier) createAndLinkeKubeChain() {
 	// 以下existingFilterChains与existingNATChains为filter/nat表下的各链名称及内容的map
 	existingFilterChains := proxier.getExistingChains(proxier.filterChainsData, utiliptables.TableFilter)
@@ -77,15 +79,22 @@ func (proxier *Proxier) createAndLinkeKubeChain() {
 	}...)
 }
 
-// getExistingChains get iptables-save output so we can check for existing chains and rules.
-// This will be a map of chain name to chain with rules as stored in iptables-save/iptables-restore
+// getExistingChains get iptables-save output so
+// we can check for existing chains and rules.
+// This will be a map of chain name to chain with rules
+// as stored in iptables-save/iptables-restore
 // Result may SHARE memory with contents of buffer.
-func (proxier *Proxier) getExistingChains(buffer *bytes.Buffer, table utiliptables.Table) map[utiliptables.Chain][]byte {
+func (proxier *Proxier) getExistingChains(
+	buffer *bytes.Buffer, 
+	table utiliptables.Table,
+) map[utiliptables.Chain][]byte {
 	buffer.Reset()
 	err := proxier.iptables.SaveInto(table, buffer)
-	if err != nil { // if we failed to get any rules
+	if err != nil { 
+		// if we failed to get any rules
 		klog.Errorf("Failed to execute iptables-save, syncing all rules: %v", err)
-	} else { // otherwise parse the output
+	} else { 
+		// otherwise parse the output
 		return utiliptables.GetChainLines(table, buffer.Bytes())
 	}
 	return nil
