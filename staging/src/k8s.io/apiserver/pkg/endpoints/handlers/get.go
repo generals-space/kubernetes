@@ -79,8 +79,14 @@ func getResourceHandler(scope *RequestScope, getter getterFunc) http.HandlerFunc
 
 // GetResource returns a function that handles retrieving a single resource from a rest.Storage object.
 func GetResource(r rest.Getter, e rest.Exporter, scope *RequestScope) http.HandlerFunc {
-	return getResourceHandler(scope,
-		func(ctx context.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error) {
+	return getResourceHandler(
+		scope,
+		func(
+			ctx context.Context,
+			name string, 
+			req *http.Request, 
+			trace *utiltrace.Trace,
+		) (runtime.Object, error) {
 			// check for export
 			options := metav1.GetOptions{}
 			if values := req.URL.Query(); len(values) > 0 {
@@ -104,13 +110,25 @@ func GetResource(r rest.Getter, e rest.Exporter, scope *RequestScope) http.Handl
 				trace.Step("About to Get from storage")
 			}
 			return r.Get(ctx, name, &options)
-		})
+		},
+	)
 }
 
-// GetResourceWithOptions returns a function that handles retrieving a single resource from a rest.Storage object.
-func GetResourceWithOptions(r rest.GetterWithOptions, scope *RequestScope, isSubresource bool) http.HandlerFunc {
-	return getResourceHandler(scope,
-		func(ctx context.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error) {
+// GetResourceWithOptions returns a function that handles retrieving a single resource
+// from a rest.Storage object.
+func GetResourceWithOptions(
+	r rest.GetterWithOptions, 
+	scope *RequestScope, 
+	isSubresource bool,
+) http.HandlerFunc {
+	return getResourceHandler(
+		scope,
+		func(
+			ctx context.Context, 
+			name string, 
+			req *http.Request, 
+			trace *utiltrace.Trace,
+		) (runtime.Object, error) {
 			opts, subpath, subpathKey := r.NewGetOptions()
 			trace.Step("About to process Get options")
 			if err := getRequestOptions(req, scope, opts, subpath, subpathKey, isSubresource); err != nil {
@@ -121,7 +139,8 @@ func GetResourceWithOptions(r rest.GetterWithOptions, scope *RequestScope, isSub
 				trace.Step("About to Get from storage")
 			}
 			return r.Get(ctx, name, opts)
-		})
+		},
+	)
 }
 
 // getRequestOptions parses out options and can include path information.  The path information shouldn't include the subresource.

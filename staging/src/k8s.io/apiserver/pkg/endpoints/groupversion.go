@@ -92,8 +92,9 @@ type APIGroupVersion struct {
 }
 
 // InstallREST registers the REST handlers (storage, watch, proxy and redirect) into a restful Container.
-// It is expected that the provided path root prefix will serve all operations. Root MUST NOT end
-// in a slash.
+// It is expected that the provided path root prefix will serve all operations.
+// Root MUST NOT end in a slash.
+// caller: staging/src/k8s.io/apiserver/pkg/server/genericapiserver.go -> installAPIResources()
 func (g *APIGroupVersion) InstallREST(container *restful.Container) error {
 	prefix := path.Join(g.Root, g.GroupVersion.Group, g.GroupVersion.Version)
 	installer := &APIInstaller{
@@ -103,7 +104,9 @@ func (g *APIGroupVersion) InstallREST(container *restful.Container) error {
 	}
 
 	apiResources, ws, registrationErrors := installer.Install()
-	versionDiscoveryHandler := discovery.NewAPIVersionHandler(g.Serializer, g.GroupVersion, staticLister{apiResources})
+	versionDiscoveryHandler := discovery.NewAPIVersionHandler(
+		g.Serializer, g.GroupVersion, staticLister{apiResources},
+	)
 	versionDiscoveryHandler.AddToWebService(ws)
 	container.Add(ws)
 	return utilerrors.NewAggregate(registrationErrors)

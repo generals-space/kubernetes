@@ -68,8 +68,12 @@ type REST struct {
 }
 
 // NewStorage returns a RESTStorage object that will work against pods.
-func NewStorage(optsGetter generic.RESTOptionsGetter, k client.ConnectionInfoGetter, proxyTransport http.RoundTripper, podDisruptionBudgetClient policyclient.PodDisruptionBudgetsGetter) (PodStorage, error) {
-
+func NewStorage(
+	optsGetter generic.RESTOptionsGetter, 
+	k client.ConnectionInfoGetter, 
+	proxyTransport http.RoundTripper, 
+	podDisruptionBudgetClient policyclient.PodDisruptionBudgetsGetter,
+) (PodStorage, error) {
 	store := &genericregistry.Store{
 		NewFunc:                  func() runtime.Object { return &api.Pod{} },
 		NewListFunc:              func() runtime.Object { return &api.PodList{} },
@@ -81,13 +85,18 @@ func NewStorage(optsGetter generic.RESTOptionsGetter, k client.ConnectionInfoGet
 		DeleteStrategy:      pod.Strategy,
 		ReturnDeletedObject: true,
 
-		TableConvertor: printerstorage.TableConvertor{TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers)},
+		TableConvertor: printerstorage.TableConvertor{
+			TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers),
+		},
 	}
 	options := &generic.StoreOptions{
 		RESTOptions: optsGetter,
 		AttrFunc:    pod.GetAttrs,
-		TriggerFunc: map[string]storage.IndexerFunc{"spec.nodeName": pod.NodeNameTriggerFunc},
+		TriggerFunc: map[string]storage.IndexerFunc{
+			"spec.nodeName": pod.NodeNameTriggerFunc,
+		},
 	}
+	// 注意这里, 这个函数会向 Store 对象填充许多通用的字段.
 	if err := store.CompleteWithOptions(options); err != nil {
 		return PodStorage{}, err
 	}
@@ -117,14 +126,17 @@ func NewStorage(optsGetter generic.RESTOptionsGetter, k client.ConnectionInfoGet
 var _ = rest.Redirector(&REST{})
 
 // ResourceLocation returns a pods location from its HostIP
-func (r *REST) ResourceLocation(ctx context.Context, name string) (*url.URL, http.RoundTripper, error) {
+func (r *REST) ResourceLocation(
+	ctx context.Context, name string,
+) (*url.URL, http.RoundTripper, error) {
 	return pod.ResourceLocation(r, r.proxyTransport, ctx, name)
 }
 
 // Implement ShortNamesProvider
 var _ rest.ShortNamesProvider = &REST{}
 
-// ShortNames implements the ShortNamesProvider interface. Returns a list of short names for a resource.
+// ShortNames implements the ShortNamesProvider interface. 
+// Returns a list of short names for a resource.
 func (r *REST) ShortNames() []string {
 	return []string{"po"}
 }
@@ -132,7 +144,8 @@ func (r *REST) ShortNames() []string {
 // Implement CategoriesProvider
 var _ rest.CategoriesProvider = &REST{}
 
-// Categories implements the CategoriesProvider interface. Returns a list of categories a resource is part of.
+// Categories implements the CategoriesProvider interface. 
+// Returns a list of categories a resource is part of.
 func (r *REST) Categories() []string {
 	return []string{"all"}
 }
@@ -184,36 +197,47 @@ func (r *BindingREST) Create(ctx context.Context, name string, obj runtime.Objec
 // setPodHostAndAnnotations sets the given pod's host to 'machine' if and only if it was
 // previously 'oldMachine' and merges the provided annotations with those of the pod.
 // Returns the current state of the pod, or an error.
-func (r *BindingREST) setPodHostAndAnnotations(ctx context.Context, podID, oldMachine, machine string, annotations map[string]string, dryRun bool) (finalPod *api.Pod, err error) {
+func (r *BindingREST) setPodHostAndAnnotations(
+	ctx context.Context, 
+	podID, 
+	oldMachine, 
+	machine string, 
+	annotations map[string]string, 
+	dryRun bool,
+) (finalPod *api.Pod, err error) {
 	podKey, err := r.store.KeyFunc(ctx, podID)
 	if err != nil {
 		return nil, err
 	}
-	err = r.store.Storage.GuaranteedUpdate(ctx, podKey, &api.Pod{}, false, nil, storage.SimpleUpdate(func(obj runtime.Object) (runtime.Object, error) {
-		pod, ok := obj.(*api.Pod)
-		if !ok {
-			return nil, fmt.Errorf("unexpected object: %#v", obj)
-		}
-		if pod.DeletionTimestamp != nil {
-			return nil, fmt.Errorf("pod %s is being deleted, cannot be assigned to a host", pod.Name)
-		}
-		if pod.Spec.NodeName != oldMachine {
-			return nil, fmt.Errorf("pod %v is already assigned to node %q", pod.Name, pod.Spec.NodeName)
-		}
-		pod.Spec.NodeName = machine
-		if pod.Annotations == nil {
-			pod.Annotations = make(map[string]string)
-		}
-		for k, v := range annotations {
-			pod.Annotations[k] = v
-		}
-		podutil.UpdatePodCondition(&pod.Status, &api.PodCondition{
-			Type:   api.PodScheduled,
-			Status: api.ConditionTrue,
-		})
-		finalPod = pod
-		return pod, nil
-	}), dryRun)
+	err = r.store.Storage.GuaranteedUpdate(
+		ctx, podKey, &api.Pod{}, false, nil, 
+		storage.SimpleUpdate(func(obj runtime.Object) (runtime.Object, error) {
+			pod, ok := obj.(*api.Pod)
+			if !ok {
+				return nil, fmt.Errorf("unexpected object: %#v", obj)
+			}
+			if pod.DeletionTimestamp != nil {
+				return nil, fmt.Errorf("pod %s is being deleted, cannot be assigned to a host", pod.Name)
+			}
+			if pod.Spec.NodeName != oldMachine {
+				return nil, fmt.Errorf("pod %v is already assigned to node %q", pod.Name, pod.Spec.NodeName)
+			}
+			pod.Spec.NodeName = machine
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			for k, v := range annotations {
+				pod.Annotations[k] = v
+			}
+			podutil.UpdatePodCondition(&pod.Status, &api.PodCondition{
+				Type:   api.PodScheduled,
+				Status: api.ConditionTrue,
+			})
+			finalPod = pod
+			return pod, nil
+		}), 
+		dryRun,
+	)
 	return finalPod, err
 }
 

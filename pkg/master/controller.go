@@ -45,10 +45,18 @@ import (
 
 const kubernetesServiceName = "kubernetes"
 
+// Controller apiserver自用的 controller, 用于创建内置的ns, 如default, kube-system, kube-public,
+// 以及ta自身的service, 在 default 空间下的 kubernetes .
+// 貌似还有对 service ip 的修复检测...这个日后再说.
+//
+// 与常规CRD不同的是, 
+// ta不需要通过yaml文件注册CRD对象, 因为ta不需要等待xxx类型资源被create才能开始执行; 
+// ta也不需要监听其他任何资源(不用创建informer, factory等), 直接创建自己需要的东西即可;
 // Controller is the controller manager for the core bootstrap Kubernetes
-// controller loops, which manage creating the "kubernetes" service, the
-// "default", "kube-system" and "kube-public" namespaces, and provide the IP
-// repair check on service IPs
+// controller loops, 
+// which manage creating the "kubernetes" service, 
+// the "default", "kube-system" and "kube-public" namespaces, 
+// and provide the IP repair check on service IPs
 type Controller struct {
 	ServiceClient   corev1client.ServicesGetter
 	NamespaceClient corev1client.NamespacesGetter
@@ -86,7 +94,15 @@ type Controller struct {
 }
 
 // NewBootstrapController returns a controller for watching the core capabilities of the master
-func (c *completedConfig) NewBootstrapController(legacyRESTStorage corerest.LegacyRESTStorage, serviceClient corev1client.ServicesGetter, nsClient corev1client.NamespacesGetter, eventClient corev1client.EventsGetter, healthClient rest.Interface) *Controller {
+// caller: pkg/master/master.go -> Master.InstallLegacyAPI() 只有这一处
+// 主调函数传入的3个Getter参数都是同一个对象, client-go 库中的 v1.CoreV1Client
+func (c *completedConfig) NewBootstrapController(
+	legacyRESTStorage corerest.LegacyRESTStorage, 
+	serviceClient corev1client.ServicesGetter, 
+	nsClient corev1client.NamespacesGetter, 
+	eventClient corev1client.EventsGetter, 
+	healthClient rest.Interface,
+) *Controller {
 	_, publicServicePort, err := c.GenericConfig.SecureServing.HostPort()
 	if err != nil {
 		klog.Fatalf("failed to get listener address: %v", err)

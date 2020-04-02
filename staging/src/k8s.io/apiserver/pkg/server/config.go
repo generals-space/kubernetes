@@ -273,6 +273,8 @@ type AuthorizationInfo struct {
 	Authorizer authorizer.Authorizer
 }
 
+// NewConfig 使用默认值初始化 Config 对象并返回.
+// caller: cmd/kube-apiserver/app/server.go -> buildGenericConfig()
 // NewConfig returns a Config struct with the default values
 func NewConfig(codecs serializer.CodecFactory) *Config {
 	defaultHealthChecks := []healthz.HealthChecker{healthz.PingHealthz, healthz.LogHealthz}
@@ -380,8 +382,12 @@ type CompletedConfig struct {
 	*completedConfig
 }
 
-// Complete fills in any fields not set that are required to have valid data and can be derived
-// from other fields. If you're going to `ApplyOptions`, do that first. It's mutating the receiver.
+// Complete 为必选但未在命令行显式指定的选项添加默认值.
+// caller: pkg/master/master.go -> Config.Complete()
+// Complete fills in any fields not set that are 
+// required to have valid data and can be derived from other fields. 
+// If you're going to `ApplyOptions`,  do that first.
+// It's mutating the receiver.
 func (c *Config) Complete(informers informers.SharedInformerFactory) CompletedConfig {
 	if len(c.ExternalAddress) == 0 && c.PublicAddress != nil {
 		c.ExternalAddress = c.PublicAddress.String()
@@ -469,8 +475,13 @@ func (c *RecommendedConfig) Complete() CompletedConfig {
 	return c.Config.Complete(c.SharedInformerFactory)
 }
 
-// New creates a new server which logically combines the handling chain with the passed server.
-// name is used to differentiate for logging. The handler chain in particular can be difficult as it starts delgating.
+// New 初始化apiServerHandler对象, 并赋值给 GenericAPIServer(返回对象).Handler 成员, 
+// 同时挂载了几条内置路由, 包括: /、/swagger-ui、/debug/*、/metrics、/version
+// caller: pkg/master/master.go -> completedConfig.New()
+// New creates a new server which logically combines the handling chain
+// with the passed server. 
+// name is used to differentiate for logging. 
+// The handler chain in particular can be difficult as it starts delgating.
 // delegationTarget may not be nil.
 func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*GenericAPIServer, error) {
 	if c.Serializer == nil {
@@ -484,6 +495,9 @@ func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*G
 	}
 
 	handlerChainBuilder := func(handler http.Handler) http.Handler {
+		// 此处调用的 BuildHandlerChainFunc 成员函数, 其实是本文件中的 DefaultBuildHandlerChain() 函数,
+		// 在之前的流程中已经注册到 c 对象中.
+		// 为 handler 添加了十几种中间件.
 		return c.BuildHandlerChainFunc(handler, c.Config)
 	}
 	apiServerHandler := NewAPIServerHandler(name, c.Serializer, handlerChainBuilder, delegationTarget.UnprotectedHandler())
@@ -578,7 +592,8 @@ func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*G
 
 	installAPI(s, c.Config)
 
-	// use the UnprotectedHandler from the delegation target to ensure that we don't attempt to double authenticator, authorize,
+	// use the UnprotectedHandler from the delegation target to ensure that 
+	// we don't attempt to double authenticator, authorize,
 	// or some other part of the filter chain in delegation cases.
 	if delegationTarget.UnprotectedHandler() == nil && c.EnableIndex {
 		s.Handler.NonGoRestfulMux.NotFoundHandler(routes.IndexLister{
@@ -590,8 +605,14 @@ func (c completedConfig) New(name string, delegationTarget DelegationTarget) (*G
 	return s, nil
 }
 
+// DefaultBuildHandlerChain 对传入的 apihandler 参数添加一了系列中间件后返回.
+// 中间件中包含身份认证, in-flight限制, cors跨域处理, panic恢复等, 十几种.
+// 在 CreateKubeAPIServerConfig() -> buildGenericConfig() -> NewConfig() 中被注册.
+// caller: pkg/master/master.go -> completedConfig.New() -> 当前文件的 completedConfig.New() 
 func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
+	// 最重要, RBAC就是这里.
 	handler := genericapifilters.WithAuthorization(apiHandler, c.Authorization.Authorizer, c.Serializer)
+	// WithMaxInFlightLimit() 限制 in-flight 请求的数量, 就是正在未处理但还未完成的请求
 	handler = genericfilters.WithMaxInFlightLimit(handler, c.MaxRequestsInFlight, c.MaxMutatingRequestsInFlight, c.LongRunningFunc)
 	handler = genericapifilters.WithImpersonation(handler, c.Authorization.Authorizer, c.Serializer)
 	handler = genericapifilters.WithAudit(handler, c.AuditBackend, c.AuditPolicyChecker, c.LongRunningFunc)
@@ -607,10 +628,16 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	return handler
 }
 
+// installAPI 在GenericAPIServer.Handler中添加几条内置路由.
+// 包括/、/swagger-ui、/debug/*、/metrics、/version等, 通过访问apiserver即可看到相关的信息
+// 此时 Handler 对象已经在主调函数中经过了初始化.
+// caller: completedConfig.New() 只有这一处
 func installAPI(s *GenericAPIServer, c *Config) {
+	// 添加"/"与"/index.html"路由
 	if c.EnableIndex {
 		routes.Index{}.Install(s.listedPathProvider, s.Handler.NonGoRestfulMux)
 	}
+	// 添加"/swagger-ui/"路由
 	if c.EnableProfiling {
 		routes.Profiling{}.Install(s.Handler.NonGoRestfulMux)
 		if c.EnableContentionProfiling {
@@ -619,6 +646,7 @@ func installAPI(s *GenericAPIServer, c *Config) {
 		// so far, only logging related endpoints are considered valid to add for these debug flags.
 		routes.DebugFlags{}.Install(s.Handler.NonGoRestfulMux, "v", routes.StringFlagPutHandler(logs.GlogSetter))
 	}
+	// 添加"/metrics"路由
 	if c.EnableMetrics {
 		if c.EnableProfiling {
 			routes.MetricsWithReset{}.Install(s.Handler.NonGoRestfulMux)
@@ -626,7 +654,7 @@ func installAPI(s *GenericAPIServer, c *Config) {
 			routes.DefaultMetrics{}.Install(s.Handler.NonGoRestfulMux)
 		}
 	}
-
+	// 添加"/version"路由
 	routes.Version{Version: c.Version}.Install(s.Handler.GoRestfulContainer)
 
 	if c.EnableDiscovery {

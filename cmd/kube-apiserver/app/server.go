@@ -161,57 +161,109 @@ func Run(completeOptions completedServerRunOptions, stopCh <-chan struct{}) erro
 	return prepared.Run(stopCh)
 }
 
+// CreateServerChain 创建服务链. 其实是创建了多个server(同时构造各server的配置对象), 如:
+// 扩展server, 核心server, 聚合server, http server, 此函数之后还有https server.
 // CreateServerChain creates the apiservers connected via delegation.
-func CreateServerChain(completedOptions completedServerRunOptions, stopCh <-chan struct{}) (*aggregatorapiserver.APIAggregator, error) {
+func CreateServerChain(
+	completedOptions completedServerRunOptions, 
+	stopCh <-chan struct{},
+) (*aggregatorapiserver.APIAggregator, error) {
+	// 创建与各节点的ssh通道
 	nodeTunneler, proxyTransport, err := CreateNodeDialer(completedOptions)
 	if err != nil {
 		return nil, err
 	}
-
-	kubeAPIServerConfig, insecureServingInfo, serviceResolver, pluginInitializer, admissionPostStartHook, err := CreateKubeAPIServerConfig(completedOptions, nodeTunneler, proxyTransport)
+	// 1. 创建kubeAPIServerConfig配置
+	kubeAPIServerConfig, insecureServingInfo, serviceResolver, pluginInitializer, admissionPostStartHook, err := CreateKubeAPIServerConfig(
+		completedOptions, 
+		nodeTunneler, 
+		proxyTransport,
+	)
 	if err != nil {
 		return nil, err
 	}
 
+	// 2. 判断是否配置了扩展API server, 创建apiExtensionsConfig配置
 	// If additional API servers are added, they should be gated.
-	apiExtensionsConfig, err := createAPIExtensionsConfig(*kubeAPIServerConfig.GenericConfig, kubeAPIServerConfig.ExtraConfig.VersionedInformers, pluginInitializer, completedOptions.ServerRunOptions, completedOptions.MasterCount,
-		serviceResolver, webhook.NewDefaultAuthenticationInfoResolverWrapper(proxyTransport, kubeAPIServerConfig.GenericConfig.LoopbackClientConfig))
+	apiExtensionsConfig, err := createAPIExtensionsConfig(
+		*kubeAPIServerConfig.GenericConfig, 
+		kubeAPIServerConfig.ExtraConfig.VersionedInformers, 
+		pluginInitializer, 
+		completedOptions.ServerRunOptions, 
+		completedOptions.MasterCount,
+		serviceResolver, 
+		webhook.NewDefaultAuthenticationInfoResolverWrapper(
+			proxyTransport, 
+			kubeAPIServerConfig.GenericConfig.LoopbackClientConfig,
+		),
+	)
 	if err != nil {
 		return nil, err
 	}
-	apiExtensionsServer, err := createAPIExtensionsServer(apiExtensionsConfig, genericapiserver.NewEmptyDelegate())
+	// 3. 启动扩展的API server
+	apiExtensionsServer, err := createAPIExtensionsServer(
+		apiExtensionsConfig, 
+		genericapiserver.NewEmptyDelegate(),
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	kubeAPIServer, err := CreateKubeAPIServer(kubeAPIServerConfig, apiExtensionsServer.GenericAPIServer, admissionPostStartHook)
+	// 4.启动最核心的kubeAPIServer
+	kubeAPIServer, err := CreateKubeAPIServer(
+		kubeAPIServerConfig, 
+		apiExtensionsServer.GenericAPIServer, 
+		admissionPostStartHook,
+	)
 	if err != nil {
 		return nil, err
 	}
-
+	// 5.聚合层的配置aggregatorConfig
 	// aggregator comes last in the chain
-	aggregatorConfig, err := createAggregatorConfig(*kubeAPIServerConfig.GenericConfig, completedOptions.ServerRunOptions, kubeAPIServerConfig.ExtraConfig.VersionedInformers, serviceResolver, proxyTransport, pluginInitializer)
+	aggregatorConfig, err := createAggregatorConfig(
+		*kubeAPIServerConfig.GenericConfig, 
+		completedOptions.ServerRunOptions, 
+		kubeAPIServerConfig.ExtraConfig.VersionedInformers, 
+		serviceResolver, 
+		proxyTransport, 
+		pluginInitializer,
+	)
 	if err != nil {
 		return nil, err
 	}
-	aggregatorServer, err := createAggregatorServer(aggregatorConfig, kubeAPIServer.GenericAPIServer, apiExtensionsServer.Informers)
+	// 6.aggregatorServer,聚合服务器, 对所有的服务器访问的整合
+	aggregatorServer, err := createAggregatorServer(
+		aggregatorConfig, 
+		kubeAPIServer.GenericAPIServer, 
+		apiExtensionsServer.Informers,
+	)
 	if err != nil {
-		// we don't need special handling for innerStopCh because the aggregator server doesn't create any go routines
+		// we don't need special handling for innerStopCh because
+		// the aggregator server doesn't create any go routines
 		return nil, err
 	}
-
+	// 7.启动非安全端口的server(额外的)
 	if insecureServingInfo != nil {
-		insecureHandlerChain := kubeserver.BuildInsecureHandlerChain(aggregatorServer.GenericAPIServer.UnprotectedHandler(), kubeAPIServerConfig.GenericConfig)
+		insecureHandlerChain := kubeserver.BuildInsecureHandlerChain(
+			aggregatorServer.GenericAPIServer.UnprotectedHandler(), 
+			kubeAPIServerConfig.GenericConfig,
+		)
 		if err := insecureServingInfo.Serve(insecureHandlerChain, kubeAPIServerConfig.GenericConfig.RequestTimeout, stopCh); err != nil {
 			return nil, err
 		}
 	}
-
+	// 8.返回GenericAPIServer, 后续启动安全端口的server
 	return aggregatorServer, nil
 }
 
+// CreateKubeAPIServer 启动最核心的 server.
+// 其中的New()方法会创建 Master{} 对象, 并初始化其中的  GenericAPIServer 成员.
+// 并挂载了几条内置路由如 /, /swagger-ui等(在c.GenericConfig.New()函数中).
 // CreateKubeAPIServer creates and wires a workable kube-apiserver
-func CreateKubeAPIServer(kubeAPIServerConfig *master.Config, delegateAPIServer genericapiserver.DelegationTarget, admissionPostStartHook genericapiserver.PostStartHookFunc) (*master.Master, error) {
+func CreateKubeAPIServer(
+	kubeAPIServerConfig *master.Config, 
+	delegateAPIServer genericapiserver.DelegationTarget, 
+	admissionPostStartHook genericapiserver.PostStartHookFunc,
+) (*master.Master, error) {
 	kubeAPIServer, err := kubeAPIServerConfig.Complete().New(delegateAPIServer)
 	if err != nil {
 		return nil, err
@@ -222,6 +274,8 @@ func CreateKubeAPIServer(kubeAPIServerConfig *master.Config, delegateAPIServer g
 	return kubeAPIServer, nil
 }
 
+// CreateNodeDialer 创建与各节点的ssh通道
+// caller: CreateServerChain()
 // CreateNodeDialer creates the dialer infrastructure to connect to the nodes.
 func CreateNodeDialer(s completedServerRunOptions) (tunneler.Tunneler, *http.Transport, error) {
 	// Setup nodeTunneler if needed
@@ -267,7 +321,11 @@ func CreateNodeDialer(s completedServerRunOptions) (tunneler.Tunneler, *http.Tra
 	return nodeTunneler, proxyTransport, nil
 }
 
-// CreateKubeAPIServerConfig creates all the resources for running the API server, but runs none of them
+// CreateKubeAPIServerConfig 创建kubeAPIServerConfig配置.
+// 配置文件对象中有很多东西, genericapiserver.Config(数据很多), kubeconfig, ssh隧道, serviceIP范围, nodePort端口范围等.
+// caller: CreateServerChain()
+// CreateKubeAPIServerConfig creates all the resources for running the API server,
+// but runs none of them
 func CreateKubeAPIServerConfig(
 	s completedServerRunOptions,
 	nodeTunneler tunneler.Tunneler,
@@ -382,7 +440,11 @@ func CreateKubeAPIServerConfig(
 	return
 }
 
-// BuildGenericConfig takes the master server options and produces the genericapiserver.Config associated with it
+// buildGenericConfig 根据传入的 ServerRunOptions 参数, 构造 genericapiserver.Config 对象, 
+// 以及其他相关对象, 比如 informerFactory, insecure server的监听信息, storageFactory 等.
+// BuildGenericConfig takes the master server options and
+// produces the genericapiserver.Config associated with it
+// caller: CreateKubeAPIServerConfig()
 func buildGenericConfig(
 	s *options.ServerRunOptions,
 	proxyTransport *http.Transport,
@@ -422,7 +484,14 @@ func buildGenericConfig(
 		return
 	}
 
-	genericConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(generatedopenapi.GetOpenAPIDefinitions, openapinamer.NewDefinitionNamer(legacyscheme.Scheme, extensionsapiserver.Scheme, aggregatorscheme.Scheme))
+	genericConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(
+		generatedopenapi.GetOpenAPIDefinitions, 
+		openapinamer.NewDefinitionNamer(
+			legacyscheme.Scheme, 
+			extensionsapiserver.Scheme, 
+			aggregatorscheme.Scheme,
+		),
+	)
 	genericConfig.OpenAPIConfig.Info.Title = "Kubernetes"
 	genericConfig.LongRunningFunc = filters.BasicLongRunningRequestCheck(
 		sets.NewString("watch", "proxy"),

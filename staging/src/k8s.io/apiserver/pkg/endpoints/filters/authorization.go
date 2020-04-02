@@ -41,8 +41,16 @@ const (
 	reasonError    = "internal error"
 )
 
-// WithAuthorizationCheck passes all authorized requests on to handler, and returns a forbidden error otherwise.
-func WithAuthorization(handler http.Handler, a authorizer.Authorizer, s runtime.NegotiatedSerializer) http.Handler {
+// WithAuthorization RBAC权限检测, 作为 核心server 中 apiHandler 的一个中间件存在.
+// 基本原理就是从 request 请求中查看对应拥有的权限, 然后与其要访问的资源所需的权限做对比.
+// caller: staging/src/k8s.io/apiserver/pkg/server/config.go -> DefaultBuildHandlerChain()
+// WithAuthorization Check passes all authorized requests on to handler,
+// and returns a forbidden error otherwise.
+func WithAuthorization(
+	handler http.Handler, 
+	a authorizer.Authorizer, 
+	s runtime.NegotiatedSerializer,
+) http.Handler {
 	if a == nil {
 		klog.Warningf("Authorization is disabled")
 		return handler
@@ -51,13 +59,16 @@ func WithAuthorization(handler http.Handler, a authorizer.Authorizer, s runtime.
 		ctx := req.Context()
 		ae := request.AuditEventFrom(ctx)
 
+		// 从 request 中获取配置的各种权限属性
 		attributes, err := GetAuthorizerAttributes(ctx)
 		if err != nil {
 			responsewriters.InternalError(w, req, err)
 			return
 		}
+		// 判断权限是否通过，不同的权限实现其接口，完成鉴权任务
 		authorized, reason, err := a.Authorize(attributes)
-		// an authorizer like RBAC could encounter evaluation errors and still allow the request, so authorizer decision is checked before error here.
+		// an authorizer like RBAC could encounter evaluation errors and 
+		// still allow the request, so authorizer decision is checked before error here.
 		if authorized == authorizer.DecisionAllow {
 			audit.LogAnnotation(ae, decisionAnnotationKey, decisionAllow)
 			audit.LogAnnotation(ae, reasonAnnotationKey, reason)

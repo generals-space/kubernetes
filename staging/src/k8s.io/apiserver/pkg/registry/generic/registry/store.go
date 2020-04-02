@@ -79,6 +79,9 @@ type GenericStore interface {
 //
 // TODO: make the default exposed methods exactly match a generic RESTStorage
 type Store struct {
+	// NewFunc 返回一个资源的空实例对象, 之后从etcd中取出的数据会被反格式化成此对象, 填充进去.
+	// 一般这个函数是由继承 Store 对象的具体资源对象来实现的, 比如 PodStorage 就自己实现了
+	// NewFunc(), 返回一个空的 Pod{} 对象.
 	// NewFunc returns a new instance of the type this registry returns for a
 	// GET of a single object, e.g.:
 	//
@@ -103,6 +106,8 @@ type Store struct {
 	// KeyRootFunc and KeyFunc must be supplied together or not at all.
 	KeyRootFunc func(ctx context.Context) string
 
+	// Store 结构中没有定义这个函数, 很可能具体的资源对象(比如 PodStorage)也没有,
+	// 其实会在 Store.CompleteWithOptions() 函数中补充上这个函数.
 	// KeyFunc returns the key for a specific object in the collection.
 	// KeyFunc is called for Create/Update/Get/Delete. Note that 'namespace'
 	// can be gotten from ctx.
@@ -178,8 +183,10 @@ type Store struct {
 	// of items into tabular output. If unset, the default will be used.
 	TableConvertor rest.TableConvertor
 
-	// Storage is the interface for the underlying storage for the
-	// resource. It is wrapped into a "DryRunnableStorage" that will
+	// 具体的资源对象(如 PodStorage)在创建 Store 对象时可能并没有定义这个字段,
+	// 但在调用 Store.CompleteWithOptions() 函数时会将其补充上.
+	// Storage is the interface for the underlying storage for the resource. 
+	// It is wrapped into a "DryRunnableStorage" that will
 	// either pass-through or simply dry-run.
 	Storage DryRunnableStorage
 	// StorageVersioner outputs the <group/version/kind> an object will be
@@ -199,6 +206,7 @@ var _ rest.TableConvertor = &Store{}
 var _ GenericStore = &Store{}
 
 const (
+	// OptimisticLockErrorMsg 乐观锁错误信息, resource version 不一致.
 	OptimisticLockErrorMsg        = "the object has been modified; please apply your changes to the latest version and try again"
 	resourceCountPollPeriodJitter = 1.2
 )
@@ -447,10 +455,21 @@ func (e *Store) deleteWithoutFinalizers(ctx context.Context, name, key string, o
 	return obj, false, err
 }
 
-// Update performs an atomic update and set of the object. Returns the result of the update
-// or an error. If the registry allows create-on-update, the create flow will be executed.
-// A bool is returned along with the object and any errors, to indicate object creation.
-func (e *Store) Update(ctx context.Context, name string, objInfo rest.UpdatedObjectInfo, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc, forceAllowCreate bool, options *metav1.UpdateOptions) (runtime.Object, bool, error) {
+// Update performs an atomic update and set of the object. 
+// Returns the result of the update or an error. 
+// If the registry allows create-on-update, 
+// the create flow will be executed.
+// A bool is returned along with the object and any errors,
+// to indicate object creation.
+func (e *Store) Update(
+	ctx context.Context, 
+	name string, 
+	objInfo rest.UpdatedObjectInfo, 
+	createValidation rest.ValidateObjectFunc, 
+	updateValidation rest.ValidateObjectUpdateFunc, 
+	forceAllowCreate bool, 
+	options *metav1.UpdateOptions,
+) (runtime.Object, bool, error) {
 	key, err := e.KeyFunc(ctx, name)
 	if err != nil {
 		return nil, false, err
@@ -471,105 +490,114 @@ func (e *Store) Update(ctx context.Context, name string, objInfo rest.UpdatedObj
 	out := e.NewFunc()
 	// deleteObj is only used in case a deletion is carried out
 	var deleteObj runtime.Object
-	err = e.Storage.GuaranteedUpdate(ctx, key, out, true, storagePreconditions, func(existing runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
-		// Given the existing object, get the new object
-		obj, err := objInfo.UpdatedObject(ctx, existing)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// If AllowUnconditionalUpdate() is true and the object specified by
-		// the user does not have a resource version, then we populate it with
-		// the latest version. Else, we check that the version specified by
-		// the user matches the version of latest storage object.
-		resourceVersion, err := e.Storage.Versioner().ObjectResourceVersion(obj)
-		if err != nil {
-			return nil, nil, err
-		}
-		doUnconditionalUpdate := resourceVersion == 0 && e.UpdateStrategy.AllowUnconditionalUpdate()
-
-		version, err := e.Storage.Versioner().ObjectResourceVersion(existing)
-		if err != nil {
-			return nil, nil, err
-		}
-		if version == 0 {
-			if !e.UpdateStrategy.AllowCreateOnUpdate() && !forceAllowCreate {
-				return nil, nil, kubeerr.NewNotFound(qualifiedResource, name)
+	err = e.Storage.GuaranteedUpdate(
+		ctx, key, out, true, storagePreconditions, 
+		func(existing runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
+			// Given the existing object, get the new object
+			obj, err := objInfo.UpdatedObject(ctx, existing)
+			if err != nil {
+				return nil, nil, err
 			}
-			creating = true
-			creatingObj = obj
-			if err := rest.BeforeCreate(e.CreateStrategy, ctx, obj); err != nil {
+
+			// If AllowUnconditionalUpdate() is true and the object specified by
+			// the user does not have a resource version, then we populate it with
+			// the latest version. Else, we check that the version specified by
+			// the user matches the version of latest storage object.
+			resourceVersion, err := e.Storage.Versioner().ObjectResourceVersion(obj)
+			if err != nil {
+				return nil, nil, err
+			}
+			doUnconditionalUpdate := resourceVersion == 0 && e.UpdateStrategy.AllowUnconditionalUpdate()
+
+			version, err := e.Storage.Versioner().ObjectResourceVersion(existing)
+			if err != nil {
+				return nil, nil, err
+			}
+			if version == 0 {
+				if !e.UpdateStrategy.AllowCreateOnUpdate() && !forceAllowCreate {
+					return nil, nil, kubeerr.NewNotFound(qualifiedResource, name)
+				}
+				creating = true
+				creatingObj = obj
+				if err := rest.BeforeCreate(e.CreateStrategy, ctx, obj); err != nil {
+					return nil, nil, err
+				}
+				// at this point we have a fully formed object. 
+				// It is time to call the validators that 
+				// the apiserver handling chain wants to enforce.
+				if createValidation != nil {
+					if err := createValidation(ctx, obj.DeepCopyObject()); err != nil {
+						return nil, nil, err
+					}
+				}
+				ttl, err := e.calculateTTL(obj, 0, false)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				return obj, &ttl, nil
+			}
+
+			creating = false
+			creatingObj = nil
+			if doUnconditionalUpdate {
+				// Update the object's resource version to match the latest
+				// storage object's resource version.
+				err = e.Storage.Versioner().UpdateObject(obj, res.ResourceVersion)
+				if err != nil {
+					return nil, nil, err
+				}
+			} else {
+				// Check if the object's resource version matches the latest
+				// resource version.
+				if resourceVersion == 0 {
+					// TODO: The Invalid error should have a field for Resource.
+					// After that field is added, we should fill the Resource and
+					// leave the Kind field empty. See the discussion in #18526.
+					qualifiedKind := schema.GroupKind{Group: qualifiedResource.Group, Kind: qualifiedResource.Resource}
+					fieldErrList := field.ErrorList{field.Invalid(field.NewPath("metadata").Child("resourceVersion"), resourceVersion, "must be specified for an update")}
+					return nil, nil, kubeerr.NewInvalid(qualifiedKind, name, fieldErrList)
+				}
+				if resourceVersion != version {
+					return nil, nil, kubeerr.NewConflict(qualifiedResource, name, fmt.Errorf(OptimisticLockErrorMsg))
+				}
+			}
+			if err := rest.BeforeUpdate(e.UpdateStrategy, ctx, obj, existing); err != nil {
 				return nil, nil, err
 			}
 			// at this point we have a fully formed object.  It is time to call the validators that the apiserver
 			// handling chain wants to enforce.
-			if createValidation != nil {
-				if err := createValidation(ctx, obj.DeepCopyObject()); err != nil {
+			if updateValidation != nil {
+				if err := updateValidation(ctx, obj.DeepCopyObject(), existing.DeepCopyObject()); err != nil {
 					return nil, nil, err
 				}
 			}
-			ttl, err := e.calculateTTL(obj, 0, false)
+			// Check the default delete-during-update conditions, and store-specific conditions if provided
+			if ShouldDeleteDuringUpdate(ctx, key, obj, existing) &&
+				(e.ShouldDeleteDuringUpdate == nil || e.ShouldDeleteDuringUpdate(ctx, key, obj, existing)) {
+				deleteObj = obj
+				return nil, nil, errEmptiedFinalizers
+			}
+			ttl, err := e.calculateTTL(obj, res.TTL, true)
 			if err != nil {
 				return nil, nil, err
 			}
-
-			return obj, &ttl, nil
-		}
-
-		creating = false
-		creatingObj = nil
-		if doUnconditionalUpdate {
-			// Update the object's resource version to match the latest
-			// storage object's resource version.
-			err = e.Storage.Versioner().UpdateObject(obj, res.ResourceVersion)
-			if err != nil {
-				return nil, nil, err
+			if int64(ttl) != res.TTL {
+				return obj, &ttl, nil
 			}
-		} else {
-			// Check if the object's resource version matches the latest
-			// resource version.
-			if resourceVersion == 0 {
-				// TODO: The Invalid error should have a field for Resource.
-				// After that field is added, we should fill the Resource and
-				// leave the Kind field empty. See the discussion in #18526.
-				qualifiedKind := schema.GroupKind{Group: qualifiedResource.Group, Kind: qualifiedResource.Resource}
-				fieldErrList := field.ErrorList{field.Invalid(field.NewPath("metadata").Child("resourceVersion"), resourceVersion, "must be specified for an update")}
-				return nil, nil, kubeerr.NewInvalid(qualifiedKind, name, fieldErrList)
-			}
-			if resourceVersion != version {
-				return nil, nil, kubeerr.NewConflict(qualifiedResource, name, fmt.Errorf(OptimisticLockErrorMsg))
-			}
-		}
-		if err := rest.BeforeUpdate(e.UpdateStrategy, ctx, obj, existing); err != nil {
-			return nil, nil, err
-		}
-		// at this point we have a fully formed object.  It is time to call the validators that the apiserver
-		// handling chain wants to enforce.
-		if updateValidation != nil {
-			if err := updateValidation(ctx, obj.DeepCopyObject(), existing.DeepCopyObject()); err != nil {
-				return nil, nil, err
-			}
-		}
-		// Check the default delete-during-update conditions, and store-specific conditions if provided
-		if ShouldDeleteDuringUpdate(ctx, key, obj, existing) &&
-			(e.ShouldDeleteDuringUpdate == nil || e.ShouldDeleteDuringUpdate(ctx, key, obj, existing)) {
-			deleteObj = obj
-			return nil, nil, errEmptiedFinalizers
-		}
-		ttl, err := e.calculateTTL(obj, res.TTL, true)
-		if err != nil {
-			return nil, nil, err
-		}
-		if int64(ttl) != res.TTL {
-			return obj, &ttl, nil
-		}
-		return obj, nil, nil
-	}, dryrun.IsDryRun(options.DryRun))
+			return obj, nil, nil
+		}, 
+		dryrun.IsDryRun(options.DryRun),
+	)
 
 	if err != nil {
 		// delete the object
 		if err == errEmptiedFinalizers {
-			return e.deleteWithoutFinalizers(ctx, name, key, deleteObj, storagePreconditions, dryrun.IsDryRun(options.DryRun))
+			return e.deleteWithoutFinalizers(
+				ctx, name, key, deleteObj, 
+				storagePreconditions,
+				dryrun.IsDryRun(options.DryRun),
+			)
 		}
 		if creating {
 			err = storeerr.InterpretCreateError(err, qualifiedResource, name)
@@ -604,6 +632,7 @@ func (e *Store) Update(ctx context.Context, name string, objInfo rest.UpdatedObj
 // Get retrieves the item from storage.
 func (e *Store) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
 	obj := e.NewFunc()
+	// name, 对于 Pod 资源来说为 PodID
 	key, err := e.KeyFunc(ctx, name)
 	if err != nil {
 		return nil, err
@@ -1187,6 +1216,10 @@ func (e *Store) Export(ctx context.Context, name string, opts metav1.ExportOptio
 	return obj, nil
 }
 
+// CompleteWithOptions 补充, 验证 Store 对象中的字段.
+// 比如验证 NewFunc, NewListFunc, KeyFunc 函数是否存在,
+// 如果 KeyFunc 和 KeyRootFunc 都不存在, 还会将其补充.
+// 
 // CompleteWithOptions updates the store with the provided options and
 // defaults common fields.
 func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
@@ -1194,13 +1227,23 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 		return fmt.Errorf("store %#v must have a non-empty qualified resource", e)
 	}
 	if e.NewFunc == nil {
-		return fmt.Errorf("store for %s must have NewFunc set", e.DefaultQualifiedResource.String())
+		return fmt.Errorf(
+			"store for %s must have NewFunc set", 
+			e.DefaultQualifiedResource.String(),
+		)
 	}
 	if e.NewListFunc == nil {
-		return fmt.Errorf("store for %s must have NewListFunc set", e.DefaultQualifiedResource.String())
+		return fmt.Errorf(
+			"store for %s must have NewListFunc set", 
+			e.DefaultQualifiedResource.String(),
+		)
 	}
+	// 这里只是判断了两者一个有值一个没有的情况, 如果都没有, 下面还会有代码补充.
 	if (e.KeyRootFunc == nil) != (e.KeyFunc == nil) {
-		return fmt.Errorf("store for %s must set both KeyRootFunc and KeyFunc or neither", e.DefaultQualifiedResource.String())
+		return fmt.Errorf(
+			"store for %s must set both KeyRootFunc and KeyFunc or neither", 
+			e.DefaultQualifiedResource.String(),
+		)
 	}
 
 	var isNamespaced bool
@@ -1210,15 +1253,24 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 	case e.UpdateStrategy != nil:
 		isNamespaced = e.UpdateStrategy.NamespaceScoped()
 	default:
-		return fmt.Errorf("store for %s must have CreateStrategy or UpdateStrategy set", e.DefaultQualifiedResource.String())
+		return fmt.Errorf(
+			"store for %s must have CreateStrategy or UpdateStrategy set", 
+			e.DefaultQualifiedResource.String(),
+		)
 	}
 
 	if e.DeleteStrategy == nil {
-		return fmt.Errorf("store for %s must have DeleteStrategy set", e.DefaultQualifiedResource.String())
+		return fmt.Errorf(
+			"store for %s must have DeleteStrategy set", 
+			e.DefaultQualifiedResource.String(),
+		)
 	}
 
 	if options.RESTOptions == nil {
-		return fmt.Errorf("options for %s must have RESTOptions set", e.DefaultQualifiedResource.String())
+		return fmt.Errorf(
+			"options for %s must have RESTOptions set", 
+			e.DefaultQualifiedResource.String(),
+		)
 	}
 
 	attrFunc := options.AttrFunc
@@ -1250,7 +1302,11 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 		prefix = "/" + prefix
 	}
 	if prefix == "/" {
-		return fmt.Errorf("store for %s has an invalid prefix %q", e.DefaultQualifiedResource.String(), opts.ResourcePrefix)
+		return fmt.Errorf(
+			"store for %s has an invalid prefix %q", 
+			e.DefaultQualifiedResource.String(), 
+			opts.ResourcePrefix,
+		)
 	}
 
 	// Set the default behavior for storage key generation

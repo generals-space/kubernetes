@@ -93,7 +93,9 @@ func startRecordingUsage() {
 
 var startOnce sync.Once
 
-// WithMaxInFlightLimit limits the number of in-flight requests to buffer size of the passed in channel.
+// WithMaxInFlightLimit 限制 in-flight 请求的数量, 就是正在未处理但还未完成的请求
+// WithMaxInFlightLimit limits the number of in-flight requests 
+// to buffer size of the passed in channel.
 func WithMaxInFlightLimit(
 	handler http.Handler,
 	nonMutatingLimit int,

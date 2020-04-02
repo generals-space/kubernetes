@@ -108,8 +108,8 @@ func BuildSwagger(crd *apiextensions.CustomResourceDefinition, version string, o
 		}
 	}
 
-	// TODO(roycaihw): remove the WebService templating below. The following logic
-	// comes from function registerResourceHandlers() in k8s.io/apiserver.
+	// TODO(roycaihw): remove the WebService templating below. 
+	// The following logic comes from function registerResourceHandlers() in k8s.io/apiserver.
 	// Alternatives are either (ideally) refactoring registerResourceHandlers() to
 	// reuse the code, or faking an APIInstaller for CR to feed to registerResourceHandlers().
 	b := newBuilder(crd, version, schema, opts.V2)

@@ -31,6 +31,8 @@ import (
 )
 
 // Creates a cacher based given storageConfig.
+// caller: staging/src/k8s.io/apiserver/pkg/server/options/etcd.go -> 
+// SimpleRestOptionsFactory.GetRESTOptions() 与 StorageFactoryRestOptionsFactory.GetRESTOptions()
 func StorageWithCacher(capacity int) generic.StorageDecorator {
 	return func(
 		storageConfig *storagebackend.Config,

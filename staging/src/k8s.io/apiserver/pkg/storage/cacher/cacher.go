@@ -305,9 +305,10 @@ type Cacher struct {
 	watchBookmarkEnabled bool
 }
 
-// NewCacherFromConfig creates a new Cacher responsible for servicing WATCH and LIST requests from
-// its internal cache and updating its cache in the background based on the
-// given configuration.
+// NewCacherFromConfig creates a new Cacher responsible for servicing WATCH and LIST requests
+// from its internal cache and updating its cache in the background
+// based on the given configuration.
+// caller: staging/src/k8s.io/apiserver/pkg/registry/generic/registry/storage_factory.go -> StorageWithCacher()
 func NewCacherFromConfig(config Config) (*Cacher, error) {
 	stopCh := make(chan struct{})
 	obj := config.NewFunc()
@@ -370,11 +371,26 @@ func NewCacherFromConfig(config Config) (*Cacher, error) {
 	}
 
 	watchCache := newWatchCache(
-		config.CacheCapacity, config.KeyFunc, cacher.processEvent, config.GetAttrsFunc, config.Versioner)
-	listerWatcher := NewCacherListerWatcher(config.Storage, config.ResourcePrefix, config.NewListFunc)
+		config.CacheCapacity, 
+		config.KeyFunc, 
+		cacher.processEvent, 
+		config.GetAttrsFunc, 
+		config.Versioner,
+	)
+	listerWatcher := NewCacherListerWatcher(
+		config.Storage, 
+		config.ResourcePrefix, 
+		config.NewListFunc,
+	)
 	reflectorName := "storage/cacher.go:" + config.ResourcePrefix
 
-	reflector := cache.NewNamedReflector(reflectorName, listerWatcher, obj, watchCache, 0)
+	reflector := cache.NewNamedReflector(
+		reflectorName, 
+		listerWatcher, 
+		obj, 
+		watchCache, 
+		0,
+	)
 	// Configure reflector's pager to for an appropriate pagination chunk size for fetching data from
 	// storage. The pager falls back to full list if paginated list calls fail due to an "Expired" error.
 	reflector.WatchListPageSize = storageWatchListPageSize
@@ -419,10 +435,10 @@ func (c *Cacher) startCaching(stopChannel <-chan struct{}) {
 	}()
 
 	c.terminateAllWatchers()
-	// Note that since onReplace may be not called due to errors, we explicitly
-	// need to retry it on errors under lock.
-	// Also note that startCaching is called in a loop, so there's no need
-	// to have another loop here.
+	// Note that since onReplace may be not called due to errors, 
+	// we explicitly need to retry it on errors under lock.
+	// Also note that startCaching is called in a loop, 
+	// so there's no need to have another loop here.
 	if err := c.reflector.ListAndWatch(stopChannel); err != nil {
 		klog.Errorf("unexpected ListAndWatch error: %v", err)
 	}
@@ -444,7 +460,12 @@ func (c *Cacher) Delete(ctx context.Context, key string, out runtime.Object, pre
 }
 
 // Watch implements storage.Interface.
-func (c *Cacher) Watch(ctx context.Context, key string, resourceVersion string, pred storage.SelectionPredicate) (watch.Interface, error) {
+func (c *Cacher) Watch(
+	ctx context.Context, 
+	key string, 
+	resourceVersion string, 
+	pred storage.SelectionPredicate,
+) (watch.Interface, error) {
 	watchRV, err := c.versioner.ParseResourceVersion(resourceVersion)
 	if err != nil {
 		return nil, err
@@ -485,7 +506,15 @@ func (c *Cacher) Watch(ctx context.Context, key string, resourceVersion string, 
 	// given that memory allocation may trigger GC and block the thread.
 	// Also note that emptyFunc is a placeholder, until we will be able
 	// to compute watcher.forget function (which has to happen under lock).
-	watcher := newCacheWatcher(chanSize, filterWithAttrsFunction(key, pred), emptyFunc, c.versioner, deadline, pred.AllowWatchBookmarks, c.objectType)
+	watcher := newCacheWatcher(
+		chanSize, 
+		filterWithAttrsFunction(key, pred), 
+		emptyFunc, 
+		c.versioner, 
+		deadline, 
+		pred.AllowWatchBookmarks, 
+		c.objectType,
+	)
 
 	// We explicitly use thread unsafe version and do locking ourself to ensure that
 	// no new events will be processed in the meantime. The watchCache will be unlocked
@@ -584,7 +613,13 @@ func (c *Cacher) Get(ctx context.Context, key string, resourceVersion string, ob
 }
 
 // GetToList implements storage.Interface.
-func (c *Cacher) GetToList(ctx context.Context, key string, resourceVersion string, pred storage.SelectionPredicate, listObj runtime.Object) error {
+func (c *Cacher) GetToList(
+	ctx context.Context, 
+	key string, 
+	resourceVersion string, 
+	pred storage.SelectionPredicate,
+	listObj runtime.Object,
+) error {
 	pagingEnabled := utilfeature.DefaultFeatureGate.Enabled(features.APIListChunking)
 	hasContinuation := pagingEnabled && len(pred.Continue) > 0
 	hasLimit := pagingEnabled && pred.Limit > 0 && resourceVersion != "0"

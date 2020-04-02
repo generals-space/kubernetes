@@ -84,10 +84,12 @@ type CategoriesProvider interface {
 	Categories() []string
 }
 
-// GroupVersionKindProvider is used to specify a particular GroupVersionKind to discovery.  This is used for polymorphic endpoints
-// which generally point to foreign versions.  Scale refers to Scale.v1beta1.extensions for instance.
+// GroupVersionKindProvider is used to specify a particular GroupVersionKind to discovery. 
+// This is used for polymorphic endpoints which generally point to foreign versions. 
+// Scale refers to Scale.v1beta1.extensions for instance.
 // This trumps KindProvider since it is capable of providing the information required.
-// TODO KindProvider (only used by federation) should be removed and replaced with this, but that presents greater risk late in 1.8.
+// TODO KindProvider (only used by federation) should be removed and replaced with this,
+// but that presents greater risk late in 1.8.
 type GroupVersionKindProvider interface {
 	GroupVersionKind(containingGV schema.GroupVersion) schema.GroupVersionKind
 }

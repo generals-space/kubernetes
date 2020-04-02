@@ -271,7 +271,9 @@ func (c *Config) createEndpointReconciler() reconcilers.EndpointReconciler {
 	return nil
 }
 
-// Complete fills in any fields not set that are required to have valid data. It's mutating the receiver.
+// Complete fills in any fields not set that are required to have valid data.
+// It's mutating the receiver.
+// caller: cmd/kube-apiserver/app/server.go -> CreateKubeAPIServer()
 func (cfg *Config) Complete() CompletedConfig {
 	c := completedConfig{
 		cfg.GenericConfig.Complete(cfg.ExtraConfig.VersionedInformers),
@@ -318,6 +320,9 @@ func (cfg *Config) Complete() CompletedConfig {
 	return CompletedConfig{&c}
 }
 
+// New 根据已有的配置文件创建 Master{} 对象, 初始化其中的 GenericAPIServer 成员.
+// 并挂载了几条内置路由如 /, /swagger-ui等(在c.GenericConfig.New()函数中).
+// 对于部分未配置的选项, 可以使用默认配置; 但是对于KubeletClientConfig这样的配置, 必须手动指定.
 // New returns a new instance of Master from the given config.
 // Certain config fields will be set to a default value if unset.
 // Certain config fields must be specified, including:
@@ -327,11 +332,13 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		return nil, fmt.Errorf("Master.New() called with empty config.KubeletClientConfig")
 	}
 
+	// New 初始化apiServerHandler对象, 并赋值给 GenericAPIServer.Handler 成员,
+	// 同时挂载了几条内置路由, 包括: /、/swagger-ui、/debug/*、/metrics、/version
 	s, err := c.GenericConfig.New("kube-apiserver", delegationTarget)
 	if err != nil {
 		return nil, err
 	}
-
+	// 判断是否支持logs相关的路由，如果支持，则添加/logs路由；
 	if c.ExtraConfig.EnableLogsSupport {
 		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
 	}
@@ -340,6 +347,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		GenericAPIServer: s,
 	}
 
+	// 添加以api开头的路由, 在集群中对应的路由有/api和/api/v1, 比较常用的资源像Pods就是该路由对应的资源; 
 	// install legacy rest storage
 	if c.ExtraConfig.APIResourceConfigSource.VersionEnabled(apiv1.SchemeGroupVersion) {
 		legacyRESTStorageProvider := corerest.LegacyRESTStorageProvider{
@@ -360,11 +368,17 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		}
 	}
 
+	// 添加以apis开头的路由, 在集群中对应的路由有, /apis/apps, /apis/batch, /apis/policy等.
+	// apis开头的路由比api更多, 应该是由于kubernetes设计之初的版本都是以api/v1开头,
+	// 后续扩展的版本以apis开头命名. 现在更多的是通过CRD与自定义Controller的方法扩展API, 不再进行api版本的扩展.
+	// 
 	// The order here is preserved in discovery.
-	// If resources with identical names exist in more than one of these groups (e.g. "deployments.apps"" and "deployments.extensions"),
+	// If resources with identical names exist in more than one of these groups
+	// (e.g. "deployments.apps"" and "deployments.extensions"),
 	// the order of this list determines which group an unqualified resource name (e.g. "deployments") should prefer.
-	// This priority order is used for local discovery, but it ends up aggregated in `k8s.io/kubernetes/cmd/kube-apiserver/app/aggregator.go
-	// with specific priorities.
+	// This priority order is used for local discovery, but it ends up aggregated in
+	// `k8s.io/kubernetes/cmd/kube-apiserver/app/aggregator.go with specific priorities.
+	// 
 	// TODO: describe the priority all the way down in the RESTStorageProviders and plumb it back through the various discovery
 	// handlers that we have.
 	restStorageProviders := []RESTStorageProvider{
@@ -403,15 +417,31 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 	return m, nil
 }
 
-func (m *Master) InstallLegacyAPI(c *completedConfig, restOptionsGetter generic.RESTOptionsGetter, legacyRESTStorageProvider corerest.LegacyRESTStorageProvider) error {
+// InstallLegacyAPI 创建Legacy资源的 namestring -> storage 的对象(apiGroupInfo), 
+// 并注册 bootstrap-controller(用于创建内置ns和service)
+// caller: Master.New()
+func (m *Master) InstallLegacyAPI(
+	c *completedConfig, 
+	restOptionsGetter generic.RESTOptionsGetter, 
+	legacyRESTStorageProvider corerest.LegacyRESTStorageProvider,
+) error {
 	legacyRESTStorage, apiGroupInfo, err := legacyRESTStorageProvider.NewLegacyRESTStorage(restOptionsGetter)
 	if err != nil {
 		return fmt.Errorf("Error building core storage: %v", err)
 	}
 
+	// 这个 controller 是apiserver自己用的, 用来创建内置的ns及名为kubernetes service对象等.
+	//
+	// 与常规CRD不同的是, 
+	// ta不需要通过yaml文件注册CRD对象, 因为ta不需要等待xxx类型资源被create才能开始执行; 
+	// ta也不需要监听其他任何资源(不用创建informer, factory等), 直接创建自己需要的东西即可;
 	controllerName := "bootstrap-controller"
 	coreClient := corev1client.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig)
-	bootstrapController := c.NewBootstrapController(legacyRESTStorage, coreClient, coreClient, coreClient, coreClient.RESTClient())
+	bootstrapController := c.NewBootstrapController(
+		legacyRESTStorage,
+		coreClient, coreClient, coreClient, 
+		coreClient.RESTClient(),
+	)
 	m.GenericAPIServer.AddPostStartHookOrDie(controllerName, bootstrapController.PostStartHook)
 	m.GenericAPIServer.AddPreShutdownHookOrDie(controllerName, bootstrapController.PreShutdownHook)
 
@@ -441,7 +471,11 @@ type RESTStorageProvider interface {
 }
 
 // InstallAPIs will install the APIs for the restStorageProviders if they are enabled.
-func (m *Master) InstallAPIs(apiResourceConfigSource serverstorage.APIResourceConfigSource, restOptionsGetter generic.RESTOptionsGetter, restStorageProviders ...RESTStorageProvider) error {
+func (m *Master) InstallAPIs(
+	apiResourceConfigSource serverstorage.APIResourceConfigSource, 
+	restOptionsGetter generic.RESTOptionsGetter, 
+	restStorageProviders ...RESTStorageProvider,
+) error {
 	apiGroupsInfo := []*genericapiserver.APIGroupInfo{}
 
 	for _, restStorageBuilder := range restStorageProviders {
@@ -514,7 +548,8 @@ func (n nodeAddressProvider) externalAddresses() ([]string, error) {
 
 func DefaultAPIResourceConfigSource() *serverstorage.ResourceConfig {
 	ret := serverstorage.NewResourceConfig()
-	// NOTE: GroupVersions listed here will be enabled by default. Don't put alpha versions in the list.
+	// NOTE: GroupVersions listed here will be enabled by default. 
+	// Don't put alpha versions in the list.
 	ret.EnableVersions(
 		admissionregistrationv1.SchemeGroupVersion,
 		admissionregistrationv1beta1.SchemeGroupVersion,
@@ -545,11 +580,13 @@ func DefaultAPIResourceConfigSource() *serverstorage.ResourceConfig {
 		schedulingapiv1beta1.SchemeGroupVersion,
 		schedulingapiv1.SchemeGroupVersion,
 	)
-	// enable non-deprecated beta resources in extensions/v1beta1 explicitly so we have a full list of what's possible to serve
+	// enable non-deprecated beta resources in extensions/v1beta1 explicitly 
+	// so we have a full list of what's possible to serve
 	ret.EnableResources(
 		extensionsapiv1beta1.SchemeGroupVersion.WithResource("ingresses"),
 	)
-	// disable deprecated beta resources in extensions/v1beta1 explicitly so we have a full list of what's possible to serve
+	// disable deprecated beta resources in extensions/v1beta1 explicitly 
+	// so we have a full list of what's possible to serve
 	ret.DisableResources(
 		extensionsapiv1beta1.SchemeGroupVersion.WithResource("daemonsets"),
 		extensionsapiv1beta1.SchemeGroupVersion.WithResource("deployments"),

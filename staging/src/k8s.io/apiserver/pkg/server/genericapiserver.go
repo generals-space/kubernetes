@@ -279,7 +279,10 @@ type preparedGenericAPIServer struct {
 	*GenericAPIServer
 }
 
-// PrepareRun does post API installation setup steps. It calls recursively the same function of the delegates.
+// PrepareRun 可以看作`preparedGenericAPIServer`对象的构造函数.
+// 加载各种接口, 包括健康检测, 存活检测, ready检测等, 并注册pre shutdown钩子函数.
+// PrepareRun does post API installation setup steps. 
+// It calls recursively the same function of the delegates.
 func (s *GenericAPIServer) PrepareRun() preparedGenericAPIServer {
 	s.delegationTarget.PrepareRun()
 
@@ -311,6 +314,10 @@ func (s *GenericAPIServer) PrepareRun() preparedGenericAPIServer {
 	return preparedGenericAPIServer{s}
 }
 
+// Run 这里是核心 server 真正启动的地方. 
+// 通过NonBlockingRun方法启动安全的https server.
+// 非安全方式的启动在CreateServerChain方法已经完成.
+// 只有在stopCh关闭或最初无法监听安全端口时返回.
 // Run spawns the secure http server. It only returns if stopCh is closed
 // or the secure port cannot be listened on initially.
 func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
@@ -323,6 +330,7 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 		time.Sleep(s.ShutdownDelayDuration)
 	}()
 
+	// NonBlockingRun创建一个安全的http server
 	// close socket after delayed stopCh
 	err := s.NonBlockingRun(delayedStopCh)
 	if err != nil {
@@ -331,13 +339,16 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 
 	<-stopCh
 
-	// run shutdown hooks directly. This includes deregistering from the kubernetes endpoint in case of kube-apiserver.
+	// 接收到stopCh之后的处理动作
+	// run shutdown hooks directly. This includes 
+	// deregistering from the kubernetes endpoint in case of kube-apiserver.
 	err = s.RunPreShutdownHooks()
 	if err != nil {
 		return err
 	}
 
-	// wait for the delayed stopCh before closing the handler chain (it rejects everything after Wait has been called).
+	// wait for the delayed stopCh before closing the handler chain 
+	// (it rejects everything after Wait has been called).
 	<-delayedStopCh
 
 	// Wait for all requests to finish, which are bounded by the RequestTimeout variable.
@@ -346,15 +357,17 @@ func (s preparedGenericAPIServer) Run(stopCh <-chan struct{}) error {
 	return nil
 }
 
-// NonBlockingRun spawns the secure http server. An error is
-// returned if the secure port cannot be listened on.
+// NonBlockingRun spawns the secure http server. 
+// An error is returned if the secure port cannot be listened on.
 func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
-	// Use an stop channel to allow graceful shutdown without dropping audit events
-	// after http server shutdown.
+	// Use an stop channel to allow graceful shutdown 
+	// without dropping audit events after http server shutdown.
 	auditStopCh := make(chan struct{})
 
-	// Start the audit backend before any request comes in. This means we must call Backend.Run
-	// before http server start serving. Otherwise the Backend.ProcessEvents call might block.
+	// Start the audit backend before any request comes in. 
+	// This means we must call Backend.Run
+	// before http server start serving. 
+	// Otherwise the Backend.ProcessEvents call might block.
 	if s.AuditBackend != nil {
 		if err := s.AuditBackend.Run(auditStopCh); err != nil {
 			return fmt.Errorf("failed to run the audit backend: %v", err)
@@ -397,8 +410,19 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}) error {
 	return nil
 }
 
-// installAPIResources is a private method for installing the REST storage backing each api groupversionresource
-func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *APIGroupInfo, openAPIModels openapiproto.Models) error {
+// installAPIResources 遍历 apiGroupInfo 下的 v1, betav1 等groupVersion, 
+// 将ta们其下的各种资源name与storage映射, 加载到以apiPrefix为前缀的路由下.
+// 这样应该可以实现在CURD+Watch/List操作上与storage方法实现一一对应.
+// installAPIResources is a private method for 
+// installing the REST storage backing each api groupversionresource
+// caller: InstallLegacyAPIGroup(), InstallAPIGroups()
+func (s *GenericAPIServer) installAPIResources(
+	apiPrefix string, 
+	apiGroupInfo *APIGroupInfo, 
+	openAPIModels openapiproto.Models,
+) error {
+	// group version: v1, vetav1...那种吧
+	// 
 	for _, groupVersion := range apiGroupInfo.PrioritizedVersions {
 		if len(apiGroupInfo.VersionedResourcesStorageMap[groupVersion.Version]) == 0 {
 			klog.Warningf("Skipping API %v because it has no resources.", groupVersion)
@@ -420,6 +444,11 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 	return nil
 }
 
+// InstallLegacyAPIGroup ...
+// @param apiPrefix: /api, /apis等前缀
+// @param apiGroupInfo: 主要是ta的`VersionedResourcesStorageMap["v1"]`成员, 这是一个string->storage的map,
+// 映射着pod, node, event等资源的storage.
+// caller: pkg/master/master.go -> Master.InstallLegacyAPI()
 func (s *GenericAPIServer) InstallLegacyAPIGroup(apiPrefix string, apiGroupInfo *APIGroupInfo) error {
 	if !s.legacyAPIGroupPrefixes.Has(apiPrefix) {
 		return fmt.Errorf("%q is not in the allowed legacy API prefixes: %v", apiPrefix, s.legacyAPIGroupPrefixes.List())
@@ -436,7 +465,11 @@ func (s *GenericAPIServer) InstallLegacyAPIGroup(apiPrefix string, apiGroupInfo 
 
 	// Install the version handler.
 	// Add a handler at /<apiPrefix> to enumerate the supported api versions.
-	s.Handler.GoRestfulContainer.Add(discovery.NewLegacyRootAPIHandler(s.discoveryAddresses, s.Serializer, apiPrefix).WebService())
+	s.Handler.GoRestfulContainer.Add(discovery.NewLegacyRootAPIHandler(
+		s.discoveryAddresses, 
+		s.Serializer, 
+		apiPrefix,
+	).WebService())
 
 	return nil
 }

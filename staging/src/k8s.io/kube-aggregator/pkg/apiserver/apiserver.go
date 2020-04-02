@@ -99,6 +99,9 @@ type runnable interface {
 // preparedGenericAPIServer is a private wrapper that enforces a call of PrepareRun() before Run can be invoked.
 type preparedAPIAggregator struct {
 	*APIAggregator
+	// runnable 是`staging/src/k8s.io/apiserver/pkg/server/genericapiserver.go` -> `preparedGenericAPIServer`对象.
+	// 在 APIAggregator.PrepareRun()中进行初始化.
+	// 为 APIAggregator.GenericAPIServer.PrepareRun()的返回值
 	runnable runnable
 }
 
@@ -130,6 +133,8 @@ type APIAggregator struct {
 	serviceResolver ServiceResolver
 
 	// Enable swagger and/or OpenAPI if these configs are non-nil.
+	// 这个字段貌似是一个定值, 追溯到 cmd/kube-apiserver/app/server.go
+	// 中的 buildGenericConfig() 函数.
 	openAPIConfig *openapicommon.Config
 
 	// openAPIAggregationController downloads and merges OpenAPI specs.
@@ -235,15 +240,22 @@ func (c completedConfig) NewWithDelegate(delegationTarget genericapiserver.Deleg
 	return s, nil
 }
 
-// PrepareRun prepares the aggregator to run, by setting up the OpenAPI spec and calling
-// the generic PrepareRun.
+// PrepareRun 启动前的准备工作, 然后返回preparedAPIAggregator对象. 准备工作包括
+// 1. 为GenericAPIServer启动后加一个钩子函数.
+// 2. 初始化openapi控制器
+// PrepareRun prepares the aggregator to run, 
+// by setting up the OpenAPI spec and calling the generic PrepareRun.
 func (s *APIAggregator) PrepareRun() (preparedAPIAggregator, error) {
-	// add post start hook before generic PrepareRun in order to be before /healthz installation
+	// add post start hook before generic PrepareRun 
+	// in order to be before /healthz installation
 	if s.openAPIConfig != nil {
-		s.GenericAPIServer.AddPostStartHookOrDie("apiservice-openapi-controller", func(context genericapiserver.PostStartHookContext) error {
-			go s.openAPIAggregationController.Run(context.StopCh)
-			return nil
-		})
+		s.GenericAPIServer.AddPostStartHookOrDie(
+			"apiservice-openapi-controller", 
+			func(context genericapiserver.PostStartHookContext) error {
+				go s.openAPIAggregationController.Run(context.StopCh)
+				return nil
+			},
+		)
 	}
 
 	prepared := s.GenericAPIServer.PrepareRun()
