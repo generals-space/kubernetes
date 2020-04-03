@@ -181,7 +181,13 @@ func getRequestOptions(req *http.Request, scope *RequestScope, into runtime.Obje
 	return scope.ParameterCodec.DecodeParameters(query, scope.Kind.GroupVersion(), into)
 }
 
-func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatch bool, minRequestTimeout time.Duration) http.HandlerFunc {
+func ListResource(
+	r rest.Lister, 
+	rw rest.Watcher, 
+	scope *RequestScope, 
+	forceWatch bool, 
+	minRequestTimeout time.Duration,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		// For performance tracking purposes.
 		trace := utiltrace.New("List", utiltrace.Field{"url", req.URL.Path})
@@ -210,7 +216,10 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 		}
 
 		opts := metainternalversion.ListOptions{}
-		if err := metainternalversion.ParameterCodec.DecodeParameters(req.URL.Query(), scope.MetaGroupVersion, &opts); err != nil {
+		err = metainternalversion.ParameterCodec.DecodeParameters(
+			req.URL.Query(), scope.MetaGroupVersion, &opts,
+		)
+		if err != nil {
 			err = errors.NewBadRequest(err.Error())
 			scope.err(err, w, req)
 			return
@@ -255,7 +264,9 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 
 		if opts.Watch || forceWatch {
 			if rw == nil {
-				scope.err(errors.NewMethodNotSupported(scope.Resource.GroupResource(), "watch"), w, req)
+				scope.err(errors.NewMethodNotSupported(
+					scope.Resource.GroupResource(), "watch"), w, req,
+				)
 				return
 			}
 			// TODO: Currently we explicitly ignore ?timeout= and use only ?timeoutSeconds=.
@@ -266,7 +277,11 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 			if timeout == 0 && minRequestTimeout > 0 {
 				timeout = time.Duration(float64(minRequestTimeout) * (rand.Float64() + 1.0))
 			}
-			klog.V(3).Infof("Starting watch for %s, rv=%s labels=%s fields=%s timeout=%s", req.URL.Path, opts.ResourceVersion, opts.LabelSelector, opts.FieldSelector, timeout)
+			klog.V(3).Infof(
+				"Starting watch for %s, rv=%s labels=%s fields=%s timeout=%s", 
+				req.URL.Path, opts.ResourceVersion, opts.LabelSelector, 
+				opts.FieldSelector, timeout,
+			)
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			watcher, err := rw.Watch(ctx, &opts)
@@ -275,9 +290,13 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 				return
 			}
 			requestInfo, _ := request.RequestInfoFrom(ctx)
-			metrics.RecordLongRunning(req, requestInfo, metrics.APIServerComponent, func() {
-				serveWatch(watcher, scope, outputMediaType, req, w, timeout)
-			})
+			metrics.RecordLongRunning(
+				req, requestInfo, 
+				metrics.APIServerComponent, 
+				func() {
+					serveWatch(watcher, scope, outputMediaType, req, w, timeout)
+				},
+			)
 			return
 		}
 
@@ -291,7 +310,9 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 		}
 		trace.Step("Listing from storage done")
 
-		transformResponseObject(ctx, scope, trace, req, w, http.StatusOK, outputMediaType, result)
+		transformResponseObject(
+			ctx, scope, trace, req, w, http.StatusOK, outputMediaType, result,
+		)
 		trace.Step("Writing http response done", utiltrace.Field{"count", meta.LenList(result)})
 	}
 }

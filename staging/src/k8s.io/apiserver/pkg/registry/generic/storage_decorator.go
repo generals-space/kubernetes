@@ -47,9 +47,11 @@ func UndecoratedStorage(
 	return NewRawStorage(config)
 }
 
-// NewRawStorage creates the low level kv storage. This is a work-around for current
-// two layer of same storage interface.
-// TODO: Once cacher is enabled on all registries (event registry is special), we will remove this method.
+// NewRawStorage 创建 etcd 连接, 需要根据配置中的版本确定创建 etcdv2 还是 etcdv3(默认).
+// NewRawStorage creates the low level kv storage.
+// This is a work-around for current two layer of same storage interface.
+// TODO: Once cacher is enabled on all registries (event registry is special),
+// we will remove this method.
 func NewRawStorage(config *storagebackend.Config) (storage.Interface, factory.DestroyFunc, error) {
 	return factory.Create(*config)
 }

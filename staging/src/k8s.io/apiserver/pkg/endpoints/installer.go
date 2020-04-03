@@ -350,7 +350,16 @@ func isVowel(c rune) bool {
 	return false
 }
 
-func restfulListResource(r rest.Lister, rw rest.Watcher, scope handlers.RequestScope, forceWatch bool, minRequestTimeout time.Duration) restful.RouteFunction {
+// restfulListResource 这里的 lister, watcher 都是主调函数中使用类型断言转换的,
+// 具体资源storage对象(如 PodStorage.(Lister))
+// caller: APIInstaller.registerResourceHandlers(), 只有 Watch/List/WatchList 有调用.
+func restfulListResource(
+	r rest.Lister, 
+	rw rest.Watcher, 
+	scope handlers.RequestScope, 
+	forceWatch bool, 
+	minRequestTimeout time.Duration,
+) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
 		handlers.ListResource(r, rw, &scope, forceWatch, minRequestTimeout)(res.ResponseWriter, req.Request)
 	}

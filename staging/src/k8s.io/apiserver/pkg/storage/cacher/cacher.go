@@ -229,14 +229,16 @@ type indexedTriggerFunc struct {
 // Cacher is responsible for serving WATCH and LIST requests for a given
 // resource from its internal cache and updating its cache in the background
 // based on the underlying storage contents.
-// Cacher implements storage.Interface (although most of the calls are just
-// delegated to the underlying storage).
+// Cacher implements storage.Interface 
+// (although most of the calls are just delegated to the underlying storage).
 type Cacher struct {
 	// HighWaterMarks for performance debugging.
-	// Important: Since HighWaterMark is using sync/atomic, it has to be at the top of the struct due to a bug on 32-bit platforms
+	// Important: Since HighWaterMark is using sync/atomic, 
+	// it has to be at the top of the struct due to a bug on 32-bit platforms
 	// See: https://golang.org/pkg/sync/atomic/ for more information
 	incomingHWM storage.HighWaterMark
 	// Incoming events that should be dispatched to watchers.
+	// 这个通道中的数据由 Cacher.processEvent() 方法向其中添加.
 	incoming chan watchCacheEvent
 
 	sync.RWMutex
@@ -271,6 +273,8 @@ type Cacher struct {
 	// watchers is mapping from the value of trigger function that a
 	// watcher is interested into the watchers
 	watcherIdx int
+	// 客户端每发起一次 Watch 请求, Cacher.Watch() 都会生成一个 watcher 对象,
+	// 用于监听目标资源的数据变化, 同时把这个 watcher 添加到 watchers 成员中.
 	watchers   indexedWatchers
 
 	// Defines a time budget that can be spend on waiting for not-ready watchers
@@ -305,6 +309,8 @@ type Cacher struct {
 	watchBookmarkEnabled bool
 }
 
+// NewCacherFromConfig 根据传入的配置创建 Cacher 对象, 此时 config 中包含已经创建好的 storage 对象.
+// Cacher 对象貌似只用于 Watch/List 操作...
 // NewCacherFromConfig creates a new Cacher responsible for servicing WATCH and LIST requests
 // from its internal cache and updating its cache in the background
 // based on the given configuration.
@@ -323,7 +329,10 @@ func NewCacherFromConfig(config Config) (*Cacher, error) {
 		// For now, we don't support multiple trigger functions defined
 		// for a given resource.
 		if len(config.IndexerFuncs) > 1 {
-			return nil, fmt.Errorf("cacher %s doesn't support more than one IndexerFunc: ", reflect.TypeOf(obj).String())
+			return nil, fmt.Errorf(
+				"cacher %s doesn't support more than one IndexerFunc: ", 
+				reflect.TypeOf(obj).String(),
+			)
 		}
 		for key, value := range config.IndexerFuncs {
 			if value != nil {
@@ -391,8 +400,10 @@ func NewCacherFromConfig(config Config) (*Cacher, error) {
 		watchCache, 
 		0,
 	)
-	// Configure reflector's pager to for an appropriate pagination chunk size for fetching data from
-	// storage. The pager falls back to full list if paginated list calls fail due to an "Expired" error.
+	// Configure reflector's pager to for an appropriate pagination chunk size
+	// for fetching data from storage. 
+	// The pager falls back to full list if paginated list calls fail
+	// due to an "Expired" error.
 	reflector.WatchListPageSize = storageWatchListPageSize
 
 	cacher.watchCache = watchCache
@@ -525,8 +536,10 @@ func (c *Cacher) Watch(
 	defer c.watchCache.RUnlock()
 	initEvents, err := c.watchCache.GetAllEventsSinceThreadUnsafe(watchRV)
 	if err != nil {
-		// To match the uncached watch implementation, once we have passed authn/authz/admission,
-		// and successfully parsed a resource version, other errors must fail with a watch event of type ERROR,
+		// To match the uncached watch implementation, 
+		// once we have passed authn/authz/admission,
+		// and successfully parsed a resource version, 
+		// other errors must fail with a watch event of type ERROR,
 		// rather than a directly returned error.
 		return newErrWatcher(err), nil
 	}
@@ -562,7 +575,13 @@ func (c *Cacher) WatchList(ctx context.Context, key string, resourceVersion stri
 }
 
 // Get implements storage.Interface.
-func (c *Cacher) Get(ctx context.Context, key string, resourceVersion string, objPtr runtime.Object, ignoreNotFound bool) error {
+func (c *Cacher) Get(
+	ctx context.Context, 
+	key string, 
+	resourceVersion string, 
+	objPtr runtime.Object, 
+	ignoreNotFound bool,
+) error {
 	if resourceVersion == "" {
 		// If resourceVersion is not specified, serve it from underlying
 		// storage (for backward compatibility).
@@ -764,18 +783,32 @@ func (c *Cacher) List(ctx context.Context, key string, resourceVersion string, p
 
 // GuaranteedUpdate implements storage.Interface.
 func (c *Cacher) GuaranteedUpdate(
-	ctx context.Context, key string, ptrToType runtime.Object, ignoreNotFound bool,
-	preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, _ ...runtime.Object) error {
+	ctx context.Context, 
+	key string, 
+	ptrToType runtime.Object, 
+	ignoreNotFound bool,
+	preconditions *storage.Preconditions, 
+	tryUpdate storage.UpdateFunc, 
+	_ ...runtime.Object,
+) error {
 	// Ignore the suggestion and try to pass down the current version of the object
 	// read from cache.
 	if elem, exists, err := c.watchCache.GetByKey(key); err != nil {
 		klog.Errorf("GetByKey returned error: %v", err)
 	} else if exists {
 		currObj := elem.(*storeElement).Object.DeepCopyObject()
-		return c.storage.GuaranteedUpdate(ctx, key, ptrToType, ignoreNotFound, preconditions, tryUpdate, currObj)
+		return c.storage.GuaranteedUpdate(
+			ctx, key, ptrToType, ignoreNotFound, 
+			preconditions, tryUpdate, currObj,
+		)
 	}
 	// If we couldn't get the object, fallback to no-suggestion.
-	return c.storage.GuaranteedUpdate(ctx, key, ptrToType, ignoreNotFound, preconditions, tryUpdate)
+	return c.storage.GuaranteedUpdate(
+		ctx, key, ptrToType, 
+		ignoreNotFound, 
+		preconditions,
+		tryUpdate,
+	)
 }
 
 // Count implements storage.Interface.
@@ -803,11 +836,15 @@ func (c *Cacher) triggerValues(event *watchCacheEvent) ([]string, bool) {
 func (c *Cacher) processEvent(event *watchCacheEvent) {
 	if curLen := int64(len(c.incoming)); c.incomingHWM.Update(curLen) {
 		// Monitor if this gets backed up, and how much.
-		klog.V(1).Infof("cacher (%v): %v objects queued in incoming channel.", c.objectType.String(), curLen)
+		klog.V(1).Infof(
+			"cacher (%v): %v objects queued in incoming channel.", 
+			c.objectType.String(), curLen,
+		)
 	}
 	c.incoming <- *event
 }
 
+// caller: NewCacherFromConfig()
 func (c *Cacher) dispatchEvents() {
 	// Jitter to help level out any aggregate load.
 	bookmarkTimer := c.clock.NewTimer(wait.Jitter(time.Second, 0.25))
@@ -828,7 +865,8 @@ func (c *Cacher) dispatchEvents() {
 			lastProcessedResourceVersion = event.ResourceVersion
 		case <-bookmarkTimer.C():
 			bookmarkTimer.Reset(wait.Jitter(time.Second, 0.25))
-			// Never send a bookmark event if we did not see an event here, this is fine
+			// Never send a bookmark event if we did not see an event here,
+			// this is fine
 			// because we don't provide any guarantees on sending bookmarks.
 			if lastProcessedResourceVersion == 0 {
 				// pop expired watchers in case there has been no update
@@ -841,7 +879,10 @@ func (c *Cacher) dispatchEvents() {
 				ResourceVersion: lastProcessedResourceVersion,
 			}
 			if err := c.versioner.UpdateObject(bookmarkEvent.Object, bookmarkEvent.ResourceVersion); err != nil {
-				klog.Errorf("failure to set resourceVersion to %d on bookmark event %+v", bookmarkEvent.ResourceVersion, bookmarkEvent.Object)
+				klog.Errorf(
+					"failure to set resourceVersion to %d on bookmark event %+v", 
+					bookmarkEvent.ResourceVersion, bookmarkEvent.Object,
+				)
 				continue
 			}
 			c.dispatchEvent(bookmarkEvent)
@@ -851,6 +892,7 @@ func (c *Cacher) dispatchEvents() {
 	}
 }
 
+// caller: Cacher.dispatchEvents()
 func (c *Cacher) dispatchEvent(event *watchCacheEvent) {
 	c.startDispatching(event)
 	defer c.finishDispatching()
@@ -920,6 +962,7 @@ func (c *Cacher) startDispatchingBookmarkEvents() {
 
 // startDispatching chooses watchers potentially interested in a given event
 // a marks dispatching as true.
+// caller: Cacher.dispatchEvent()
 func (c *Cacher) startDispatching(event *watchCacheEvent) {
 	triggerValues, supported := c.triggerValues(event)
 
@@ -1140,7 +1183,16 @@ type cacheWatcher struct {
 	objectType reflect.Type
 }
 
-func newCacheWatcher(chanSize int, filter filterWithAttrsFunc, forget func(), versioner storage.Versioner, deadline time.Time, allowWatchBookmarks bool, objectType reflect.Type) *cacheWatcher {
+// caller: Cacher.Watch()
+func newCacheWatcher(
+	chanSize int, 
+	filter filterWithAttrsFunc, 
+	forget func(), 
+	versioner storage.Versioner, 
+	deadline time.Time, 
+	allowWatchBookmarks bool, 
+	objectType reflect.Type,
+) *cacheWatcher {
 	return &cacheWatcher{
 		input:               make(chan *watchCacheEvent, chanSize),
 		result:              make(chan watch.Event, chanSize),
@@ -1174,6 +1226,7 @@ func (c *cacheWatcher) stopThreadUnsafe() {
 	}
 }
 
+// caller: cacheWatcher.add()
 func (c *cacheWatcher) nonblockingAdd(event *watchCacheEvent) bool {
 	select {
 	case c.input <- event:
@@ -1183,7 +1236,9 @@ func (c *cacheWatcher) nonblockingAdd(event *watchCacheEvent) bool {
 	}
 }
 
-// Nil timer means that add will not block (if it can't send event immediately, it will break the watcher)
+// caller: Cacher.dispatchEvent()
+// Nil timer means that add will not block 
+// (if it can't send event immediately, it will break the watcher)
 func (c *cacheWatcher) add(event *watchCacheEvent, timer *time.Timer) bool {
 	// Try to send the event immediately, without blocking.
 	if c.nonblockingAdd(event) {
@@ -1254,6 +1309,7 @@ func (c *cacheWatcher) convertToWatchEvent(event *watchCacheEvent) *watch.Event 
 	return nil
 }
 
+// caller: cacheWatcher.process()
 // NOTE: sendWatchCacheEvent is assumed to not modify <event> !!!
 func (c *cacheWatcher) sendWatchCacheEvent(event *watchCacheEvent) {
 	watchEvent := c.convertToWatchEvent(event)
@@ -1286,7 +1342,11 @@ func (c *cacheWatcher) sendWatchCacheEvent(event *watchCacheEvent) {
 	}
 }
 
-func (c *cacheWatcher) process(ctx context.Context, initEvents []*watchCacheEvent, resourceVersion uint64) {
+func (c *cacheWatcher) process(
+	ctx context.Context, 
+	initEvents []*watchCacheEvent, 
+	resourceVersion uint64,
+) {
 	defer utilruntime.HandleCrash()
 
 	// Check how long we are processing initEvents.

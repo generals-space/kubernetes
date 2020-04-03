@@ -150,6 +150,8 @@ type Store struct {
 	// integrations that are above storage and should only be used for
 	// specific cases where storage of the value is not appropriate, since
 	// they cannot be watched.
+	// 这里只是一个类型声明, 实际的赋值在这里:
+	// staging/src/k8s.io/apiserver/pkg/server/options/etcd.go -> GetRESTOptions()
 	Decorator ObjectFunc
 	// CreateStrategy implements resource-specific behavior during creation.
 	CreateStrategy rest.RESTCreateStrategy
@@ -185,6 +187,9 @@ type Store struct {
 
 	// 具体的资源对象(如 PodStorage)在创建 Store 对象时可能并没有定义这个字段,
 	// 但在调用 Store.CompleteWithOptions() 函数时会将其补充上.
+	// Storage.Storage 会使用 Decorator() 进行初始化, 初始化的操作在
+	// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/storage_factory.go
+	// 中的 StorageWithCacher() 函数.
 	// Storage is the interface for the underlying storage for the resource. 
 	// It is wrapped into a "DryRunnableStorage" that will
 	// either pass-through or simply dry-run.
@@ -1133,7 +1138,11 @@ func (e *Store) Watch(ctx context.Context, options *metainternalversion.ListOpti
 }
 
 // WatchPredicate starts a watch for the items that matches.
-func (e *Store) WatchPredicate(ctx context.Context, p storage.SelectionPredicate, resourceVersion string) (watch.Interface, error) {
+func (e *Store) WatchPredicate(
+	ctx context.Context, 
+	p storage.SelectionPredicate, 
+	resourceVersion string,
+) (watch.Interface, error) {
 	if name, ok := p.MatchesSingle(); ok {
 		if key, err := e.KeyFunc(ctx, name); err == nil {
 			w, err := e.Storage.Watch(ctx, key, resourceVersion, p)
@@ -1219,7 +1228,7 @@ func (e *Store) Export(ctx context.Context, name string, opts metav1.ExportOptio
 // CompleteWithOptions 补充, 验证 Store 对象中的字段.
 // 比如验证 NewFunc, NewListFunc, KeyFunc 函数是否存在,
 // 如果 KeyFunc 和 KeyRootFunc 都不存在, 还会将其补充.
-// 
+// 另外, 具体的资源Storage对象(如PodStorage)没有 Storage 成员, 也会在这里补全.
 // CompleteWithOptions updates the store with the provided options and
 // defaults common fields.
 func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
@@ -1337,7 +1346,11 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 		}
 
 		if isNamespaced {
-			return e.KeyFunc(genericapirequest.WithNamespace(genericapirequest.NewContext(), accessor.GetNamespace()), accessor.GetName())
+			return e.KeyFunc(
+				genericapirequest.WithNamespace(genericapirequest.NewContext(), 
+				accessor.GetNamespace()), 
+				accessor.GetName(),
+			)
 		}
 
 		return e.KeyFunc(genericapirequest.NewContext(), accessor.GetName())
@@ -1362,6 +1375,11 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 	if e.Storage.Storage == nil {
 		e.Storage.Codec = opts.StorageConfig.Codec
 		var err error
+		// 使用 opt.StorageConfig 初始化底层 etcd 连接.
+		// 注意这里返回的 e.Storage.Storage 其实是 cacher,
+		// 可以查看 opts.Decorator 的函数原型, 在
+		// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/storage_factory.go
+		// 中通过 StorageWithCacher() 函数声明.
 		e.Storage.Storage, e.DestroyFunc, err = opts.Decorator(
 			opts.StorageConfig,
 			prefix,

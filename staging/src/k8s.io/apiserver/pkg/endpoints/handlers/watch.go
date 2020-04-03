@@ -61,9 +61,17 @@ func (w *realTimeoutFactory) TimeoutCh() (<-chan time.Time, func() bool) {
 	return t.C, t.Stop
 }
 
+// serveWatch 应该是在调用 ServeHTTP 前的一些准备工作, 超时判断, 序列化等.
 // serveWatch will serve a watch response.
 // TODO: the functionality in this method and in WatchServer.Serve is not cleanly decoupled.
-func serveWatch(watcher watch.Interface, scope *RequestScope, mediaTypeOptions negotiation.MediaTypeOptions, req *http.Request, w http.ResponseWriter, timeout time.Duration) {
+func serveWatch(
+	watcher watch.Interface, 
+	scope *RequestScope, 
+	mediaTypeOptions negotiation.MediaTypeOptions, 
+	req *http.Request, 
+	w http.ResponseWriter, 
+	timeout time.Duration,
+) {
 	options, err := optionsForTransform(mediaTypeOptions, req)
 	if err != nil {
 		scope.err(err, w, req)
@@ -71,20 +79,31 @@ func serveWatch(watcher watch.Interface, scope *RequestScope, mediaTypeOptions n
 	}
 
 	// negotiate for the stream serializer from the scope's serializer
-	serializer, err := negotiation.NegotiateOutputMediaTypeStream(req, scope.Serializer, scope)
+	serializer, err := negotiation.NegotiateOutputMediaTypeStream(
+		req, scope.Serializer, scope,
+	)
 	if err != nil {
 		scope.err(err, w, req)
 		return
 	}
 	framer := serializer.StreamSerializer.Framer
 	streamSerializer := serializer.StreamSerializer.Serializer
-	encoder := scope.Serializer.EncoderForVersion(streamSerializer, scope.Kind.GroupVersion())
+	encoder := scope.Serializer.EncoderForVersion(
+		streamSerializer, scope.Kind.GroupVersion(),
+	)
 	useTextFraming := serializer.EncodesAsText
 	if framer == nil {
-		scope.err(fmt.Errorf("no framer defined for %q available for embedded encoding", serializer.MediaType), w, req)
+		scope.err(
+			fmt.Errorf(
+				"no framer defined for %q available for embedded encoding", 
+				serializer.MediaType,
+			),
+			w, req,
+		)
 		return
 	}
-	// TODO: next step, get back mediaTypeOptions from negotiate and return the exact value here
+	// TODO: next step, get back mediaTypeOptions from negotiate and
+	// return the exact value here
 	mediaType := serializer.MediaType
 	if mediaType != runtime.ContentTypeJSON {
 		mediaType += ";stream=watch"
@@ -92,16 +111,32 @@ func serveWatch(watcher watch.Interface, scope *RequestScope, mediaTypeOptions n
 
 	// locate the appropriate embedded encoder based on the transform
 	var embeddedEncoder runtime.Encoder
-	contentKind, contentSerializer, transform := targetEncodingForTransform(scope, mediaTypeOptions, req)
+	contentKind, contentSerializer, transform := targetEncodingForTransform(
+		scope, mediaTypeOptions, req,
+	)
 	if transform {
-		info, ok := runtime.SerializerInfoForMediaType(contentSerializer.SupportedMediaTypes(), serializer.MediaType)
+		info, ok := runtime.SerializerInfoForMediaType(
+			contentSerializer.SupportedMediaTypes(), serializer.MediaType,
+		)
 		if !ok {
-			scope.err(fmt.Errorf("no encoder for %q exists in the requested target %#v", serializer.MediaType, contentSerializer), w, req)
+			scope.err(
+				fmt.Errorf(
+					"no encoder for %q exists in the requested target %#v", 
+					serializer.MediaType, contentSerializer,
+				), 
+				w, 
+				req,
+			)
 			return
 		}
-		embeddedEncoder = contentSerializer.EncoderForVersion(info.Serializer, contentKind.GroupVersion())
+		embeddedEncoder = contentSerializer.EncoderForVersion(
+			info.Serializer, contentKind.GroupVersion(),
+		)
 	} else {
-		embeddedEncoder = scope.Serializer.EncoderForVersion(serializer.Serializer, contentKind.GroupVersion())
+		embeddedEncoder = scope.Serializer.EncoderForVersion(
+			serializer.Serializer, 
+			contentKind.GroupVersion(),
+		)
 	}
 
 	ctx := req.Context()
@@ -119,7 +154,9 @@ func serveWatch(watcher watch.Interface, scope *RequestScope, mediaTypeOptions n
 		Fixup: func(obj runtime.Object) runtime.Object {
 			result, err := transformObject(ctx, obj, options, mediaTypeOptions, scope, req)
 			if err != nil {
-				utilruntime.HandleError(fmt.Errorf("failed to transform object %v: %v", reflect.TypeOf(obj), err))
+				utilruntime.HandleError(
+					fmt.Errorf("failed to transform object %v: %v", reflect.TypeOf(obj), err),
+				)
 				return obj
 			}
 			// When we are transformed to a table, use the table options as the state for whether we
@@ -158,8 +195,12 @@ type WatchServer struct {
 	TimeoutFactory TimeoutFactory
 }
 
-// ServeHTTP serves a series of encoded events via HTTP with Transfer-Encoding: chunked
-// or over a websocket connection.
+// ServeHTTP 把 WatchServer 中正在 Watching(Storage的watcher断言对象) 的资源数据
+// 不断通过 http 的方式返回给客户端.
+// 注意: watch 请求要么是通过http 1.1 的 trunk 连续返回数据, 要么是使用 ws 长连接.
+// caller: serveWatch()
+// ServeHTTP serves a series of encoded events via HTTP with 
+// Transfer-Encoding: chunked or over a websocket connection.
 func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	kind := s.Scope.Kind
 	metrics.RegisteredWatchers.WithLabelValues(kind.Group, kind.Version, kind.Kind).Inc()
@@ -213,6 +254,7 @@ func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	internalEvent := &metav1.InternalEvent{}
 	outEvent := &metav1.WatchEvent{}
 	buf := &bytes.Buffer{}
+	// s.Watching 是 watcher 对象.
 	ch := s.Watching.ResultChan()
 	for {
 		select {

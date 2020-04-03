@@ -27,6 +27,9 @@ import (
 // RESTOptions is set of configuration options to generic registries.
 type RESTOptions struct {
 	StorageConfig *storagebackend.Config
+	// 这其实是一个包装函数, 在
+	// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/storage_factory.go
+	// 中通过 StorageWithCacher() 函数声明.
 	Decorator     StorageDecorator
 
 	EnableGarbageCollection bool

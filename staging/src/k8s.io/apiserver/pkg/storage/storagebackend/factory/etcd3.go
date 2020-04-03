@@ -94,7 +94,7 @@ func newETCD3HealthCheck(c storagebackend.Config) (func() error, error) {
 		return fmt.Errorf("error getting data from etcd: %v", err)
 	}, nil
 }
-
+// newETCD3Client 调用 etcd 官方库创建客户端对象.
 func newETCD3Client(c storagebackend.TransportConfig) (*clientv3.Client, error) {
 	tlsInfo := transport.TLSInfo{
 		CertFile: c.CertFile,
@@ -220,7 +220,8 @@ func newETCD3Storage(c storagebackend.Config) (storage.Interface, DestroyFunc, e
 
 	var once sync.Once
 	destroyFunc := func() {
-		// we know that storage destroy funcs are called multiple times (due to reuse in subresources).
+		// we know that storage destroy funcs are called multiple times
+		// (due to reuse in subresources).
 		// Hence, we only destroy once.
 		// TODO: fix duplicated storage destroy calls higher level
 		once.Do(func() {

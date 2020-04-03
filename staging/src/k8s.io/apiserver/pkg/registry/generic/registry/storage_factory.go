@@ -30,9 +30,15 @@ import (
 	"k8s.io/apiserver/pkg/storage/storagebackend/factory"
 )
 
-// Creates a cacher based given storageConfig.
+// StorageWithCacher 按照传入的缓存容量创建 decorator 包装函数.
+// 返回的 decorator 函数在执行时会根据传入的配置初始化后端真正的 storage 对象,
+// 然后根据 storage 对象再创建 cacher 对象.
 // caller: staging/src/k8s.io/apiserver/pkg/server/options/etcd.go -> 
 // SimpleRestOptionsFactory.GetRESTOptions() 与 StorageFactoryRestOptionsFactory.GetRESTOptions()
+// 但这里只是赋值, 实现调用 Decorator() 函数在 
+// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go
+// 中的 Store.CompleteWithOptions() 方法中.
+// Creates a cacher based given storageConfig.
 func StorageWithCacher(capacity int) generic.StorageDecorator {
 	return func(
 		storageConfig *storagebackend.Config,
@@ -41,8 +47,8 @@ func StorageWithCacher(capacity int) generic.StorageDecorator {
 		newFunc func() runtime.Object,
 		newListFunc func() runtime.Object,
 		getAttrsFunc storage.AttrFunc,
-		triggerFuncs storage.IndexerFuncs) (storage.Interface, factory.DestroyFunc, error) {
-
+		triggerFuncs storage.IndexerFuncs,
+	) (storage.Interface, factory.DestroyFunc, error) {
 		s, d, err := generic.NewRawStorage(storageConfig)
 		if err != nil {
 			return s, d, err
@@ -55,8 +61,10 @@ func StorageWithCacher(capacity int) generic.StorageDecorator {
 			klog.Infof("Storage caching is enabled for %T with capacity %v", newFunc(), capacity)
 		}
 
-		// TODO: we would change this later to make storage always have cacher and hide low level KV layer inside.
-		// Currently it has two layers of same storage interface -- cacher and low level kv.
+		// TODO: we would change this later to make storage always have cacher and
+		// hide low level KV layer inside.
+		// Currently it has two layers of same storage interface,
+		// cacher and low level kv.
 		cacherConfig := cacherstorage.Config{
 			CacheCapacity:  capacity,
 			Storage:        s,

@@ -26,6 +26,7 @@ import (
 // DestroyFunc is to destroy any resources used by the storage returned in Create() together.
 type DestroyFunc func()
 
+// Create 判断配置中是 etcd2 还是 etcd3, 初始化不同版本的客户端.
 // Create creates a storage backend based on given config.
 func Create(c storagebackend.Config) (storage.Interface, DestroyFunc, error) {
 	switch c.Type {

@@ -571,7 +571,12 @@ func (a *APIInstaller) registerResourceHandlers(
 			if isSubresource {
 				doc = "list " + subresource + " of objects of kind " + kind
 			}
-			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, restfulListResource(lister, watcher, reqScope, false, a.minRequestTimeout))
+			handler := metrics.InstrumentRouteFunc(
+				action.Verb, group, version, 
+				resource, subresource, requestScope, 
+				metrics.APIServerComponent, 
+				restfulListResource(lister, watcher, reqScope, false, a.minRequestTimeout),
+			)
 			route := ws.GET(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
@@ -734,7 +739,12 @@ func (a *APIInstaller) registerResourceHandlers(
 				doc = "watch changes to " + subresource + " of an object of kind " + kind
 			}
 			doc += ". deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter."
-			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, restfulListResource(lister, watcher, reqScope, true, a.minRequestTimeout))
+			handler := metrics.InstrumentRouteFunc(
+				action.Verb, group, version, 
+				resource, subresource, requestScope, 
+				metrics.APIServerComponent, 
+				restfulListResource(lister, watcher, reqScope, true, a.minRequestTimeout),
+			)
 			route := ws.GET(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
@@ -754,7 +764,12 @@ func (a *APIInstaller) registerResourceHandlers(
 				doc = "watch individual changes to a list of " + subresource + " of " + kind
 			}
 			doc += ". deprecated: use the 'watch' parameter with a list operation instead."
-			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, restfulListResource(lister, watcher, reqScope, true, a.minRequestTimeout))
+			handler := metrics.InstrumentRouteFunc(
+				action.Verb, group, version, 
+				resource, subresource, requestScope, 
+				metrics.APIServerComponent, 
+				restfulListResource(lister, watcher, reqScope, true, a.minRequestTimeout),
+			)
 			route := ws.GET(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).

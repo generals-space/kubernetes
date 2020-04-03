@@ -24,7 +24,11 @@ import (
 	"k8s.io/apiserver/pkg/storage"
 )
 
+// DryRunnableStorage 这应该是一个封装过的 Cacher 对象, 而不是直接 etcd storage 对象.
 type DryRunnableStorage struct {
+	// 这应该是一个 cacher 对象, ta也实现了 storage.Interface接口, 在 
+	// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go
+	// 中通过 CompleteWithOptions() 方法被赋值.
 	Storage storage.Interface
 	Codec   runtime.Codec
 }
@@ -33,7 +37,14 @@ func (s *DryRunnableStorage) Versioner() storage.Versioner {
 	return s.Storage.Versioner()
 }
 
-func (s *DryRunnableStorage) Create(ctx context.Context, key string, obj, out runtime.Object, ttl uint64, dryRun bool) error {
+func (s *DryRunnableStorage) Create(
+	ctx context.Context, 
+	key string, 
+	obj, 
+	out runtime.Object, 
+	ttl uint64, 
+	dryRun bool,
+) error {
 	if dryRun {
 		if err := s.Storage.Get(ctx, key, "", out, false); err == nil {
 			return storage.NewKeyExistsError(key, 0)

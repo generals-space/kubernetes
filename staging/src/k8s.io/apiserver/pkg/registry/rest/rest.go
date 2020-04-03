@@ -260,10 +260,11 @@ type Patcher interface {
 // Watcher should be implemented by all Storage objects that
 // want to offer the ability to watch for changes through the watch api.
 type Watcher interface {
-	// 'label' selects on labels; 'field' selects on the object's fields. Not all fields
-	// are supported; an error should be returned if 'field' tries to select on a field that
-	// isn't supported. 'resourceVersion' allows for continuing/starting a watch at a
-	// particular version.
+	// 'label' selects on labels; 'field' selects on the object's fields. 
+	// Not all fields are supported; 
+	// an error should be returned if 'field' tries to select on a field that
+	// isn't supported. 
+	// 'resourceVersion' allows for continuing/starting a watch at a particular version.
 	Watch(ctx context.Context, options *metainternalversion.ListOptions) (watch.Interface, error)
 }
 
