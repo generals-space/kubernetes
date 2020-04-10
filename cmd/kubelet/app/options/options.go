@@ -267,6 +267,8 @@ func getLabelNamespace(key string) string {
 	return ""
 }
 
+// NewKubeletConfiguration 创建并返回默认的 KubeletConfiguration 对象
+// caller: cmd/kubelet/app/server.go -> NewKubeletCommand(), 及本文件中的 NewKubeletServer()
 // NewKubeletConfiguration will create a new KubeletConfiguration with default values
 func NewKubeletConfiguration() (*kubeletconfig.KubeletConfiguration, error) {
 	scheme, _, err := kubeletscheme.NewSchemeAndCodecs()
@@ -283,8 +285,9 @@ func NewKubeletConfiguration() (*kubeletconfig.KubeletConfiguration, error) {
 	return config, nil
 }
 
-// applyLegacyDefaults applies legacy default values to the KubeletConfiguration in order to
-// preserve the command line API. This is used to construct the baseline default KubeletConfiguration
+// applyLegacyDefaults applies legacy default values to the KubeletConfiguration
+// in order to preserve the command line API. 
+// This is used to construct the baseline default KubeletConfiguration
 // before the first round of flag parsing.
 func applyLegacyDefaults(kc *kubeletconfig.KubeletConfiguration) {
 	// --anonymous-auth

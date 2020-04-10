@@ -442,7 +442,14 @@ func toCgroupFsName(cgroupName cm.CgroupName) string {
 // to make the kernel reclaim memory in the allocatable cgroup
 // the time to reduce pressure may be unbounded, but usually finishes within a second
 func reduceAllocatableMemoryUsage() {
-	cmd := fmt.Sprintf("echo 0 > /sys/fs/cgroup/memory/%s/memory.force_empty", toCgroupFsName(cm.NewCgroupName(cm.RootCgroupName, defaultNodeAllocatableCgroup)))
+	cmd := fmt.Sprintf(
+		"echo 0 > /sys/fs/cgroup/memory/%s/memory.force_empty", 
+		toCgroupFsName(
+			cm.NewCgroupName(
+				cm.RootCgroupName, defaultNodeAllocatableCgroup,
+			),
+		),
+	)
 	_, err := exec.Command("sudo", "sh", "-c", cmd).CombinedOutput()
 	framework.ExpectNoError(err)
 }

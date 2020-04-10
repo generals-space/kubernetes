@@ -83,7 +83,14 @@ func init() {
 }
 
 // New creates a new cAdvisor Interface for linux systems.
-func New(imageFsInfoProvider ImageFsInfoProvider, rootPath string, cgroupRoots []string, usingLegacyStats bool) (Interface, error) {
+func New(
+	imageFsInfoProvider ImageFsInfoProvider, 
+	rootPath string, 
+	cgroupRoots []string, 
+	usingLegacyStats bool,
+) (Interface, error) {
+	// sysFs 这就是一个空的结构体(没有成员), 集成了一些封装过的 ioutil 完成的函数,
+	// 主要是 /sys/ 目录下的块设备和网络设备的信息读取的工作.
 	sysFs := sysfs.NewRealSysFs()
 
 	includedMetrics := cadvisormetrics.MetricSet{
@@ -100,7 +107,15 @@ func New(imageFsInfoProvider ImageFsInfoProvider, rootPath string, cgroupRoots [
 	}
 
 	// Create the cAdvisor container manager.
-	m, err := manager.New(memory.New(statsCacheDuration, nil), sysFs, maxHousekeepingInterval, allowDynamicHousekeeping, includedMetrics, http.DefaultClient, cgroupRoots)
+	m, err := manager.New(
+		memory.New(statsCacheDuration, nil), 
+		sysFs, 
+		maxHousekeepingInterval, 
+		allowDynamicHousekeeping, 
+		includedMetrics, 
+		http.DefaultClient, 
+		cgroupRoots,
+	)
 	if err != nil {
 		return nil, err
 	}

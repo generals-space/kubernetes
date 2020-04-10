@@ -259,6 +259,7 @@ HTTP server: The kubelet can also listen for HTTP and respond to a simple API
 			stopCh := genericapiserver.SetupSignalHandler()
 
 			// start the experimental docker shim, if enabled
+			// 默认为 false
 			if kubeletServer.KubeletFlags.ExperimentalDockershim {
 				if err := RunDockershim(&kubeletServer.KubeletFlags, kubeletConfig, stopCh); err != nil {
 					klog.Fatal(err)
@@ -387,9 +388,13 @@ func UnsecuredDependencies(s *options.KubeletServer) (*kubelet.Dependencies, err
 	}
 
 	return &kubelet.Dependencies{
-		Auth:                nil, // default does not enforce auth[nz]
-		CAdvisorInterface:   nil, // cadvisor.New launches background processes (bg http.ListenAndServe, and some bg cleaners), not set here
-		Cloud:               nil, // cloud provider might start background processes
+		// default does not enforce auth[nz]
+		Auth:                nil, 
+		// cadvisor.New launches background processes 
+		// (bg http.ListenAndServe, and some bg cleaners), not set here
+		CAdvisorInterface:   nil, 
+		// cloud provider might start background processes
+		Cloud:               nil, 
 		ContainerManager:    nil,
 		DockerClientConfig:  dockerClientConfig,
 		KubeClient:          nil,
@@ -406,11 +411,17 @@ func UnsecuredDependencies(s *options.KubeletServer) (*kubelet.Dependencies, err
 }
 
 // Run runs the specified KubeletServer with the given Dependencies.
-// This should never exit. The kubeDeps argument may be nil - if so,
+// This should never exit. 
+// The kubeDeps argument may be nil - if so,
 // it is initialized from the settings on KubeletServer.
 // Otherwise, the caller is assumed to have set up the Dependencies object
 // and a default one will not be generated.
-func Run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan struct{}) error {
+// caller: NewKubeletCommand()
+func Run(
+	s *options.KubeletServer, 
+	kubeDeps *kubelet.Dependencies, 
+	stopCh <-chan struct{},
+) error {
 	// To help debugging, immediately log version
 	klog.Infof("Version: %+v", version.Get())
 	if err := initForOS(s.KubeletFlags.WindowsService); err != nil {
@@ -483,7 +494,9 @@ func run(
 	stopCh <-chan struct{},
 ) (err error) {
 	// Set global feature gates based on the value on the initial KubeletServer
-	err = utilfeature.DefaultMutableFeatureGate.SetFromMap(kubeletServer.KubeletConfiguration.FeatureGates)
+	err = utilfeature.DefaultMutableFeatureGate.SetFromMap(
+		kubeletServer.KubeletConfiguration.FeatureGates,
+	)
 	if err != nil {
 		return err
 	}
@@ -501,7 +514,10 @@ func run(
 	if kubeletServer.LockFilePath != "" {
 		klog.Infof("acquiring file lock on %q", kubeletServer.LockFilePath)
 		if err := flock.Acquire(kubeletServer.LockFilePath); err != nil {
-			return fmt.Errorf("unable to acquire file lock on %q: %v", kubeletServer.LockFilePath, err)
+			return fmt.Errorf(
+				"unable to acquire file lock on %q: %v", 
+				kubeletServer.LockFilePath, err,
+			)
 		}
 		if kubeletServer.ExitOnLockContention {
 			klog.Infof("watching for inotify events for: %v", kubeletServer.LockFilePath)
@@ -530,16 +546,25 @@ func run(
 		}
 	}
 
+	// 由 UnsecuredDependencies() 构造的 kubeDeps.Cloud 的确为 nil
 	if kubeDeps.Cloud == nil {
 		if !cloudprovider.IsExternal(kubeletServer.CloudProvider) {
-			cloud, err := cloudprovider.InitCloudProvider(kubeletServer.CloudProvider, kubeletServer.CloudConfigFile)
+			cloud, err := cloudprovider.InitCloudProvider(
+				kubeletServer.CloudProvider, kubeletServer.CloudConfigFile,
+			)
 			if err != nil {
 				return err
 			}
 			if cloud == nil {
-				klog.V(2).Infof("No cloud provider specified: %q from the config file: %q\n", kubeletServer.CloudProvider, kubeletServer.CloudConfigFile)
+				klog.V(2).Infof(
+					"No cloud provider specified: %q from the config file: %q\n", 
+					kubeletServer.CloudProvider, kubeletServer.CloudConfigFile,
+				)
 			} else {
-				klog.V(2).Infof("Successfully initialized cloud provider: %q from the config file: %q\n", kubeletServer.CloudProvider, kubeletServer.CloudConfigFile)
+				klog.V(2).Infof(
+					"Successfully initialized cloud provider: %q from the config file: %q\n", 
+					kubeletServer.CloudProvider, kubeletServer.CloudConfigFile,
+				)
 			}
 			kubeDeps.Cloud = cloud
 		}
@@ -563,6 +588,7 @@ func run(
 		klog.Warningf("standalone mode, no API client")
 
 	// 这里的case是"或"关系, 只要一个成立即可.
+	// 由 UnsecuredDependencies() 构造的 kubeDeps 这3个成员的确为 nil
 	case kubeDeps.KubeClient == nil, kubeDeps.EventClient == nil, kubeDeps.HeartbeatClient == nil:
 		clientConfig, closeAllConns, err := buildKubeletClientConfig(kubeletServer, nodeName)
 		if err != nil {
@@ -593,7 +619,9 @@ func run(
 		// if the NodeLease feature is enabled, the timeout is the minimum of
 		// the lease duration and status update frequency
 		if utilfeature.DefaultFeatureGate.Enabled(features.NodeLease) {
-			leaseTimeout := time.Duration(kubeletServer.KubeletConfiguration.NodeLeaseDurationSeconds) * time.Second
+			leaseTimeout := time.Duration(
+				kubeletServer.KubeletConfiguration.NodeLeaseDurationSeconds,
+			) * time.Second
 			if heartbeatClientConfig.Timeout > leaseTimeout {
 				heartbeatClientConfig.Timeout = leaseTimeout
 			}
@@ -607,6 +635,7 @@ func run(
 
 	// If the kubelet config controller is available, and dynamic config is enabled,
 	// start the config and status sync loops
+	// 动态加载 kubelet.config 的特性.
 	if utilfeature.DefaultFeatureGate.Enabled(features.DynamicKubeletConfig) &&
 		len(kubeletServer.DynamicConfigDir.Value()) > 0 &&
 		kubeDeps.KubeletConfigController != nil && !standaloneMode && !kubeletServer.RunOnce {
@@ -620,6 +649,7 @@ func run(
 		}
 	}
 
+	// 由 UnsecuredDependencies() 构造的 kubeDeps.Auth 的确为 nil
 	if kubeDeps.Auth == nil {
 		auth, err := BuildAuth(nodeName, kubeDeps.KubeClient, kubeletServer.KubeletConfiguration)
 		if err != nil {
@@ -628,20 +658,31 @@ func run(
 		kubeDeps.Auth = auth
 	}
 
-	// cgroupRoots 获取当前kubelet进程及系统中dockerd进程的cgroup名称, 并添加到该数组中.
+	// cgroupRoots 获取当前kubelet进程及系统中 dockerd 进程的 cgroup 名称, 并添加到该数组中.
+	// 只有在 cadvisor.New() 中有使用过.
+	// cadvisor 会读取这些目录下存在的, 不同 Pod 的资源上限, 
 	var cgroupRoots []string
-	// 这里的取值应该是config.yaml文件中的取值, 默认root与cgroups都为空, driver为cgroupfs.
+	// 这里的取值应该是 config.yaml 文件中的取值, 默认 root 与 cgroups 都为空, driver 为 cgroupfs.
+	// 但 kubelet 会使用与 dockerd 相同的配置, CgroupRoot 一般为 `/sys/fs/cgroup`
 	cgroupRoots = append(cgroupRoots, cm.NodeAllocatableRoot(kubeletServer.CgroupRoot, kubeletServer.CgroupDriver))
+	// kubeletCgroup 这是 kubelet 进程本身所使用的 cgroups.
 	kubeletCgroup, err := cm.GetKubeletContainer(kubeletServer.KubeletCgroups)
 	if err != nil {
-		klog.Warningf("failed to get the kubelet's cgroup: %v.  Kubelet system container metrics may be missing.", err)
+		klog.Warningf(
+			"failed to get the kubelet's cgroup: %v.  Kubelet system container metrics may be missing.", 
+			err,
+		)
 	} else if kubeletCgroup != "" {
 		cgroupRoots = append(cgroupRoots, kubeletCgroup)
 	}
 
+	// runtimeCgroup 这个应该是 docker等 runtime 进程所使用的 cgroups
 	runtimeCgroup, err := cm.GetRuntimeContainer(kubeletServer.ContainerRuntime, kubeletServer.RuntimeCgroups)
 	if err != nil {
-		klog.Warningf("failed to get the container runtime's cgroup: %v. Runtime system container metrics may be missing.", err)
+		klog.Warningf(
+			"failed to get the container runtime's cgroup: %v. Runtime system container metrics may be missing.", 
+			err,
+		)
 	} else if runtimeCgroup != "" {
 		// RuntimeCgroups is optional, so ignore if it isn't specified
 		cgroupRoots = append(cgroupRoots, runtimeCgroup)
@@ -652,13 +693,20 @@ func run(
 		cgroupRoots = append(cgroupRoots, kubeletServer.SystemCgroups)
 	}
 
+	// 由 UnsecuredDependencies() 构造的 kubeDeps.CAdvisorInterface 的确为 nil
 	if kubeDeps.CAdvisorInterface == nil {
-		imageFsInfoProvider := cadvisor.NewImageFsInfoProvider(kubeletServer.ContainerRuntime, kubeletServer.RemoteRuntimeEndpoint)
+		imageFsInfoProvider := cadvisor.NewImageFsInfoProvider(
+			kubeletServer.ContainerRuntime, 
+			kubeletServer.RemoteRuntimeEndpoint,
+		)
 		kubeDeps.CAdvisorInterface, err = cadvisor.New(
 			imageFsInfoProvider,
 			kubeletServer.RootDirectory,
 			cgroupRoots,
-			cadvisor.UsingLegacyCadvisorStats(kubeletServer.ContainerRuntime, kubeletServer.RemoteRuntimeEndpoint),
+			cadvisor.UsingLegacyCadvisorStats(
+				kubeletServer.ContainerRuntime, 
+				kubeletServer.RemoteRuntimeEndpoint,
+			),
 		)
 		if err != nil {
 			return err
@@ -668,9 +716,12 @@ func run(
 	// Setup event recorder if required.
 	makeEventRecorder(kubeDeps, nodeName)
 
+	// 由 UnsecuredDependencies() 构造的 kubeDeps.ContainerManager 的确为 nil
 	if kubeDeps.ContainerManager == nil {
 		if kubeletServer.CgroupsPerQOS && kubeletServer.CgroupRoot == "" {
-			klog.Info("--cgroups-per-qos enabled, but --cgroup-root was not specified.  defaulting to /")
+			klog.Info(
+				"--cgroups-per-qos enabled, but --cgroup-root was not specified.  defaulting to /",
+			)
 			kubeletServer.CgroupRoot = "/"
 		}
 		kubeReserved, err := parseResourceList(kubeletServer.KubeReserved)
@@ -760,7 +811,13 @@ func run(
 		mux := http.NewServeMux()
 		healthz.InstallHandler(mux)
 		go wait.Until(func() {
-			err := http.ListenAndServe(net.JoinHostPort(kubeletServer.HealthzBindAddress, strconv.Itoa(int(kubeletServer.HealthzPort))), mux)
+			err := http.ListenAndServe(
+				net.JoinHostPort(
+					kubeletServer.HealthzBindAddress, 
+					strconv.Itoa(int(kubeletServer.HealthzPort)),
+				), 
+				mux,
+			)
 			if err != nil {
 				klog.Errorf("Starting healthz server failed: %v", err)
 			}

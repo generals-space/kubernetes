@@ -106,7 +106,13 @@ func HugePageLimits(resourceList v1.ResourceList) map[int64]int64 {
 }
 
 // ResourceConfigForPod takes the input pod and outputs the cgroup resource config.
-func ResourceConfigForPod(pod *v1.Pod, enforceCPULimits bool, cpuPeriod uint64) *ResourceConfig {
+// caller: pkg/kubelet/cm/pod_container_manager_linux.go -> podContainerManagerImpl.EnsureExists()
+// 只有这一处调用.
+func ResourceConfigForPod(
+	pod *v1.Pod, 
+	enforceCPULimits bool, 
+	cpuPeriod uint64,
+) *ResourceConfig {
 	// sum requests and limits.
 	reqs, limits := resource.PodRequestsAndLimits(pod)
 
@@ -238,8 +244,11 @@ func GetPodCgroupNameSuffix(podUID types.UID) string {
 }
 
 // NodeAllocatableRoot returns the literal cgroup path for the node allocatable cgroup
+// cgroupRoot 一般为 /sys/fs/cgroup.
 func NodeAllocatableRoot(cgroupRoot, cgroupDriver string) string {
 	root := ParseCgroupfsToCgroupName(cgroupRoot)
+	// defaultNodeAllocatableCgroupName 值为 kubepods
+	// 所以 nodeAllocatableRoot 
 	nodeAllocatableRoot := NewCgroupName(root, defaultNodeAllocatableCgroupName)
 	if libcontainerCgroupManagerType(cgroupDriver) == libcontainerSystemd {
 		return nodeAllocatableRoot.ToSystemd()
@@ -249,6 +258,18 @@ func NodeAllocatableRoot(cgroupRoot, cgroupDriver string) string {
 
 // GetKubeletContainer 其实就是判断了一下 kubeletCgroups 为空的情况, 
 // 为空的时候访问/proc/$pid/cgroup文件取得真实的cgroup名称.
+// 11:memory:/system.slice/kubelet.service
+// 10:devices:/system.slice/kubelet.service
+// 9:blkio:/system.slice/kubelet.service
+// 8:net_prio,net_cls:/
+// 7:hugetlb:/
+// 6:freezer:/
+// 5:perf_event:/
+// 4:cpuacct,cpu:/system.slice/kubelet.service
+// 3:pids:/system.slice/kubelet.service
+// 2:cpuset:/
+// 1:name=systemd:/system.slice/kubelet.service
+//
 // caller: cmd/kubelet/app/server.go -> run()
 // GetKubeletContainer returns the cgroup the kubelet will use
 func GetKubeletContainer(kubeletCgroups string) (string, error) {
