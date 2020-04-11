@@ -36,8 +36,13 @@ type resourceAnalyzer struct {
 
 var _ ResourceAnalyzer = &resourceAnalyzer{}
 
+// NewResourceAnalyzer 这里创建了 fsResourceAnalyzer 对象, 
+// 且返回的结果被赋值给了 Kubelet.resourceAnalyzer 成员.
 // NewResourceAnalyzer returns a new ResourceAnalyzer
-func NewResourceAnalyzer(statsProvider Provider, calVolumeFrequency time.Duration) ResourceAnalyzer {
+func NewResourceAnalyzer(
+	statsProvider Provider, 
+	calVolumeFrequency time.Duration,
+) ResourceAnalyzer {
 	fsAnalyzer := newFsResourceAnalyzer(statsProvider, calVolumeFrequency)
 	summaryProvider := NewSummaryProvider(statsProvider)
 	return &resourceAnalyzer{fsAnalyzer, summaryProvider}

@@ -156,6 +156,8 @@ type KubeletConfiguration struct {
 	// configure all containers to search this domain in addition to the
 	// host's search domains.
 	ClusterDomain string
+	// ClusterDNS 默认 container 使用宿主机的 DNS 解析, 如果设置了这个列表, 
+	// 应该会修改容器内部的 /etc/resolv.conf 文件的内容.
 	// clusterDNS is a list of IP addresses for a cluster DNS server. If set,
 	// kubelet will configure all containers to use this for DNS resolution
 	// instead of the host's DNS servers.
@@ -249,16 +251,18 @@ type KubeletConfiguration struct {
 	ContentType string
 	// kubeAPIQPS is the QPS to use while talking with kubernetes apiserver
 	KubeAPIQPS int32
-	// kubeAPIBurst is the burst to allow while talking with kubernetes
-	// apiserver
+	// kubeAPIBurst is the burst to allow while talking with kubernetes apiserver
 	KubeAPIBurst int32
 	// serializeImagePulls when enabled, tells the Kubelet to pull images one at a time.
 	SerializeImagePulls bool
-	// Map of signal names to quantities that defines hard eviction thresholds. For example: {"memory.available": "300Mi"}.
+	// Map of signal names to quantities that defines hard eviction thresholds.
+	// For example: {"memory.available": "300Mi"}.
 	EvictionHard map[string]string
-	// Map of signal names to quantities that defines soft eviction thresholds.  For example: {"memory.available": "300Mi"}.
+	// Map of signal names to quantities that defines soft eviction thresholds. 
+	// For example: {"memory.available": "300Mi"}.
 	EvictionSoft map[string]string
-	// Map of signal names to quantities that defines grace periods for each soft eviction signal. For example: {"memory.available": "30s"}.
+	// Map of signal names to quantities that defines grace periods for each soft eviction signal.
+	// For example: {"memory.available": "30s"}.
 	EvictionSoftGracePeriod map[string]string
 	// Duration for which the kubelet has to wait before transitioning out of an eviction pressure condition.
 	EvictionPressureTransitionPeriod metav1.Duration

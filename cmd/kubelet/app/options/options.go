@@ -85,6 +85,8 @@ type KubeletFlags struct {
 	ProviderID string
 
 	// Container-runtime-specific options.
+	// 这个成员的值在 NewKubeletFlags() 中通过 NewContainerRuntimeOptions() 完成构造与初始化
+	// 其实就是关于 docker 的一些默认值.
 	config.ContainerRuntimeOptions
 
 	// certDirectory is the directory where the TLS certs are located (by

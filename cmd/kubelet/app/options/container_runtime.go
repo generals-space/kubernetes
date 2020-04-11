@@ -38,6 +38,7 @@ var (
 
 // NewContainerRuntimeOptions will create a new ContainerRuntimeOptions with
 // default values.
+// caller: cmd/kubelet/app/options/options.go -> NewKubeletFlags()
 func NewContainerRuntimeOptions() *config.ContainerRuntimeOptions {
 	dockerEndpoint := ""
 	if runtime.GOOS != "windows" {

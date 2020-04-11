@@ -30,6 +30,7 @@ import (
 	"github.com/google/cadvisor/utils/oomparser"
 )
 
+// 监听系统中的 OOM 事件(通过解析 /dev/kmsg 内容实现此功能)
 type realWatcher struct {
 	recorder record.EventRecorder
 }
@@ -45,7 +46,11 @@ func NewWatcher(recorder record.EventRecorder) Watcher {
 
 const systemOOMEvent = "SystemOOM"
 
-// Start watches for system oom's and records an event for every system oom encountered.
+// Start 开始监听系统中的 OOM 事件(通过解析 /dev/kmsg 内容实现此功能)
+// 关于 /dev/kmsg 文件与 dmesg 命令的区别, 可以见如下文章
+// [内核调试 /proc/kmsg 和 dmesg](https://blog.csdn.net/zlcchina/article/details/24195331)
+// Start watches for system oom's and 
+// records an event for every system oom encountered.
 func (ow *realWatcher) Start(ref *v1.ObjectReference) error {
 	oomLog, err := oomparser.New()
 	if err != nil {
@@ -62,9 +67,20 @@ func (ow *realWatcher) Start(ref *v1.ObjectReference) error {
 				klog.V(1).Infof("Got sys oom event: %v", event)
 				eventMsg := "System OOM encountered"
 				if event.ProcessName != "" && event.Pid != 0 {
-					eventMsg = fmt.Sprintf("%s, victim process: %s, pid: %d", eventMsg, event.ProcessName, event.Pid)
+					eventMsg = fmt.Sprintf(
+						"%s, victim process: %s, pid: %d", 
+						eventMsg, 
+						event.ProcessName, 
+						event.Pid,
+					)
 				}
-				ow.recorder.PastEventf(ref, metav1.Time{Time: event.TimeOfDeath}, v1.EventTypeWarning, systemOOMEvent, eventMsg)
+				ow.recorder.PastEventf(
+					ref, 
+					metav1.Time{Time: event.TimeOfDeath}, 
+					v1.EventTypeWarning, 
+					systemOOMEvent, 
+					eventMsg,
+				)
 			}
 		}
 		klog.Errorf("Unexpectedly stopped receiving OOM notifications")

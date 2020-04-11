@@ -19,6 +19,8 @@ package oom
 import v1 "k8s.io/api/core/v1"
 
 // Watcher defines the interface of OOM watchers.
+// 接口实现可以见 pkg/kubelet/oom/oom_watcher_linux.go
+// 中定义的 realWatcher{} 结构
 type Watcher interface {
 	Start(ref *v1.ObjectReference) error
 }

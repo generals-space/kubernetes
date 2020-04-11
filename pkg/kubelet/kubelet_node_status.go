@@ -376,8 +376,8 @@ func (kl *Kubelet) syncNodeStatus() {
 	}
 }
 
-// updateNodeStatus updates node status to master with retries if there is any
-// change or enough time passed from the last sync.
+// updateNodeStatus updates node status to master with retries 
+// if there is any change or enough time passed from the last sync.
 func (kl *Kubelet) updateNodeStatus() error {
 	klog.V(5).Infof("Updating node status")
 	for i := 0; i < nodeStatusUpdateRetry; i++ {
@@ -393,8 +393,8 @@ func (kl *Kubelet) updateNodeStatus() error {
 	return fmt.Errorf("update node status exceeds retry count")
 }
 
-// tryUpdateNodeStatus tries to update node status to master if there is any
-// change or enough time passed from the last sync.
+// tryUpdateNodeStatus tries to update node status to master 
+// if there is any change or enough time passed from the last sync.
 func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	// In large clusters, GET and PUT operations on Node objects coming
 	// from here are the majority of load on apiserver and etcd.
@@ -430,8 +430,10 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	kl.setNodeStatus(node)
 
 	now := kl.clock.Now()
-	if utilfeature.DefaultFeatureGate.Enabled(features.NodeLease) && now.Before(kl.lastStatusReportTime.Add(kl.nodeStatusReportFrequency)) {
-		if !podCIDRChanged && !nodeStatusHasChanged(&originalNode.Status, &node.Status) {
+	if utilfeature.DefaultFeatureGate.Enabled(features.NodeLease) && 
+		now.Before(kl.lastStatusReportTime.Add(kl.nodeStatusReportFrequency)) {
+		if !podCIDRChanged && 
+			!nodeStatusHasChanged(&originalNode.Status, &node.Status) {
 			// We must mark the volumes as ReportedInUse in volume manager's dsw even
 			// if no changes were made to the node status (no volumes were added or removed
 			// from the VolumesInUse list).
@@ -454,7 +456,12 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	}
 
 	// Patch the current status on the API server
-	updatedNode, _, err := nodeutil.PatchNodeStatus(kl.heartbeatClient.CoreV1(), types.NodeName(kl.nodeName), originalNode, node)
+	updatedNode, _, err := nodeutil.PatchNodeStatus(
+		kl.heartbeatClient.CoreV1(), 
+		types.NodeName(kl.nodeName), 
+		originalNode, 
+		node,
+	)
 	if err != nil {
 		return err
 	}

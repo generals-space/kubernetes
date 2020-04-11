@@ -1046,21 +1046,29 @@ func setContentTypeForClient(cfg *restclient.Config, contentType string) {
 	cfg.ContentType = contentType
 	switch contentType {
 	case runtime.ContentTypeProtobuf:
-		cfg.AcceptContentTypes = strings.Join([]string{runtime.ContentTypeProtobuf, runtime.ContentTypeJSON}, ",")
+		cfg.AcceptContentTypes = strings.Join(
+			[]string{runtime.ContentTypeProtobuf, runtime.ContentTypeJSON}, 
+			",",
+		)
 	default:
 		// otherwise let the rest client perform defaulting
 	}
 }
 
 // RunKubelet is responsible for setting up and running a kubelet.
-// @param runOnce: 对应kubelet的--runonce选项, 拉取apiserver的信息, 同步资源并检测static pod状态, 然后退出.
+// @param runOnce: 对应kubelet的 --runonce 选项, 拉取apiserver的信息, 
+// 		同步资源并检测static pod状态, 然后直接退出.
 // caller: run()
 // It is used in three different applications:
 //   1 Integration tests
 //   2 Kubelet binary
 //   3 Standalone 'kubernetes' binary
 // Eventually, #2 will be replaced with instances of #3
-func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencies, runOnce bool) error {
+func RunKubelet(
+	kubeServer *options.KubeletServer, 
+	kubeDeps *kubelet.Dependencies, 
+	runOnce bool,
+) error {
 	hostname, err := nodeutil.GetHostname(kubeServer.HostnameOverride)
 	if err != nil {
 		return err
@@ -1264,7 +1272,11 @@ func startKubelet(
 		)
 	}
 	if kubeCfg.ReadOnlyPort > 0 {
-		go k.ListenAndServeReadOnly(net.ParseIP(kubeCfg.Address), uint(kubeCfg.ReadOnlyPort), enableCAdvisorJSONEndpoints)
+		go k.ListenAndServeReadOnly(
+			net.ParseIP(kubeCfg.Address), 
+			uint(kubeCfg.ReadOnlyPort), 
+			enableCAdvisorJSONEndpoints,
+		)
 	}
 	if utilfeature.DefaultFeatureGate.Enabled(features.KubeletPodResources) {
 		go k.ListenAndServePodResources()

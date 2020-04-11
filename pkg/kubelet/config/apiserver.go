@@ -29,8 +29,17 @@ import (
 )
 
 // NewSourceApiserver creates a config source that watches and pulls from the apiserver.
-func NewSourceApiserver(c clientset.Interface, nodeName types.NodeName, updates chan<- interface{}) {
-	lw := cache.NewListWatchFromClient(c.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector(api.PodHostField, string(nodeName)))
+func NewSourceApiserver(
+	c clientset.Interface, 
+	nodeName types.NodeName, 
+	updates chan<- interface{},
+) {
+	lw := cache.NewListWatchFromClient(
+		c.CoreV1().RESTClient(), 
+		"pods", 
+		metav1.NamespaceAll, 
+		fields.OneTermEqualSelector(api.PodHostField, string(nodeName)),
+	)
 	newSourceApiserverFromLW(lw, updates)
 }
 
@@ -41,8 +50,16 @@ func newSourceApiserverFromLW(lw cache.ListerWatcher, updates chan<- interface{}
 		for _, o := range objs {
 			pods = append(pods, o.(*v1.Pod))
 		}
-		updates <- kubetypes.PodUpdate{Pods: pods, Op: kubetypes.SET, Source: kubetypes.ApiserverSource}
+		updates <- kubetypes.PodUpdate{
+			Pods: pods, 
+			Op: kubetypes.SET, 
+			Source: kubetypes.ApiserverSource,
+		}
 	}
-	r := cache.NewReflector(lw, &v1.Pod{}, cache.NewUndeltaStore(send, cache.MetaNamespaceKeyFunc), 0)
+	r := cache.NewReflector(
+		lw, &v1.Pod{}, 
+		cache.NewUndeltaStore(send, cache.MetaNamespaceKeyFunc), 
+		0,
+	)
 	go r.Run(wait.NeverStop)
 }

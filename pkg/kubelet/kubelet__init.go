@@ -65,7 +65,7 @@ func (kl *Kubelet) setupDataDirs() error {
 	return nil
 }
 
-// initializeModules 初始化一些无需docker运行就可以启动的模块, 如设置kubelet数据目录, 容器日志目录,
+// initializeModules 初始化一些无需 docker 运行就可以启动的模块, 如设置kubelet数据目录, 容器日志目录,
 // 启动镜像管理器, oom监听器, 和资源监控器等.
 // caller: kl.Run()
 // initializeModules will initialize internal modules that 

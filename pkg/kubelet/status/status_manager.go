@@ -115,7 +115,11 @@ type Manager interface {
 
 const syncPeriod = 10 * time.Second
 
-func NewManager(kubeClient clientset.Interface, podManager kubepod.Manager, podDeletionSafety PodDeletionSafetyProvider) Manager {
+func NewManager(
+	kubeClient clientset.Interface, 
+	podManager kubepod.Manager, 
+	podDeletionSafety PodDeletionSafetyProvider,
+) Manager {
 	return &manager{
 		kubeClient:        kubeClient,
 		podManager:        podManager,

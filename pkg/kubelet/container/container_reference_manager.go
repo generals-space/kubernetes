@@ -22,6 +22,8 @@ import (
 	"k8s.io/api/core/v1"
 )
 
+// RefManager 就是一个 **容器ID:ObjectReference 对象的 map**, 加上一个读写锁.
+// ObjectReference 包含了资源的 Kind, NS, Name等信息.
 // RefManager manages the references for the containers.
 // The references are used for reporting events such as creation,
 // failure, etc. This manager is thread-safe, no locks are necessary
@@ -34,7 +36,9 @@ type RefManager struct {
 // NewRefManager creates and returns a container reference manager
 // with empty contents.
 func NewRefManager() *RefManager {
-	return &RefManager{containerIDToRef: make(map[ContainerID]*v1.ObjectReference)}
+	return &RefManager{
+		containerIDToRef: make(map[ContainerID]*v1.ObjectReference),
+	}
 }
 
 // SetRef stores a reference to a pod's container, associating it with the given container ID.

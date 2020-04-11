@@ -102,6 +102,7 @@ type Kubelet struct {
 	cadvisor cadvisor.Interface
 
 	// Set to true to have the node register itself with the apiserver.
+	// apiserver 是否已经得知当前 node 的存在.
 	registerNode bool
 	// List of taints to add to a node object when the kubelet registers itself.
 	registerWithTaints []api.Taint
@@ -223,8 +224,12 @@ type Kubelet struct {
 	// lastStatusReportTime is the time when node status was last reported.
 	lastStatusReportTime time.Time
 
-	// syncNodeStatusMux is a lock on updating the node status, because this path is not thread-safe.
-	// This lock is used by Kubelet.syncNodeStatus function and shouldn't be used anywhere else.
+	// syncNodeStatusMux is a lock on updating the node status, 
+	// because this path is not thread-safe.
+	// This lock is used by Kubelet.syncNodeStatus function 
+	// and shouldn't be used anywhere else.
+	// 每次调用 Kubelet.syncNodeStatus() 向 apiserver 同步 node 节点状态时, 
+	// 需要使用这个锁.
 	syncNodeStatusMux sync.Mutex
 
 	// updatePodCIDRMux is a lock on updating pod CIDR, because this path is not thread-safe.
