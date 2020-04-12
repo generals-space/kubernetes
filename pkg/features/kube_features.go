@@ -170,6 +170,7 @@ const (
 	// beta: v1.11
 	//
 	// Enable pods to set sysctls on a pod
+	// 1.16.2 版本默认为 true
 	Sysctls featuregate.Feature = "Sysctls"
 
 	// owner @smarterclayton
@@ -276,6 +277,7 @@ const (
 	// beta: v1.11
 	//
 	// Enable container log rotation for cri container runtime
+	// 1.16.2 默认为 true
 	CRIContainerLogRotation featuregate.Feature = "CRIContainerLogRotation"
 
 	// owner: @krmayankk

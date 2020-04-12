@@ -104,7 +104,15 @@ func (mc *basicMirrorClient) DeleteMirrorPod(podFullName string, uid *types.UID)
 	return true, nil
 }
 
+// Static Pod 与 Mirror Pod 是不同的, 前者是由 kubelet 自行管理的 Pod 群,
+// 后者是 kubelet 将 static pod 注册到 apiserver, 让管理者可以统一查阅的记录.
+// 但是使用 kubectl 删除看到的 mirror pod 并不会将 static pod 真的删除, 
+// kubelet 还会自动重建的.
+
 // IsStaticPod returns true if the passed Pod is static.
+// 如果一个 Pod 是 static pod, 那么 annotation 中会存在
+// kubernetes.io/config.source: file
+// 否则就不是 static pod.
 func IsStaticPod(pod *v1.Pod) bool {
 	source, err := kubetypes.GetPodSource(pod)
 	return err == nil && source != kubetypes.ApiserverSource
@@ -112,6 +120,8 @@ func IsStaticPod(pod *v1.Pod) bool {
 
 // IsMirrorPod returns true if the passed Pod is a Mirror Pod.
 func IsMirrorPod(pod *v1.Pod) bool {
+	// kube-controller-manager 和 kube-scheduler 就是 mirror pod
+	// ta们的 annotation 中包含 `kubernetes.io/config.mirror` 字段.
 	_, ok := pod.Annotations[kubetypes.ConfigMirrorAnnotationKey]
 	return ok
 }

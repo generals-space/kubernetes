@@ -63,7 +63,13 @@ type controller struct {
 }
 
 // NewController constructs and returns a controller
-func NewController(clock clock.Clock, client clientset.Interface, holderIdentity string, leaseDurationSeconds int32, onRepeatedHeartbeatFailure func()) Controller {
+func NewController(
+	clock clock.Clock, 
+	client clientset.Interface, 
+	holderIdentity string, 
+	leaseDurationSeconds int32, 
+	onRepeatedHeartbeatFailure func(),
+) Controller {
 	var leaseClient coordclientset.LeaseInterface
 	if client != nil {
 		leaseClient = client.CoordinationV1().Leases(corev1.NamespaceNodeLease)

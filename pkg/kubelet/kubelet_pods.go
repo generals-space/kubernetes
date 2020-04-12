@@ -1068,8 +1068,10 @@ func (kl *Kubelet) HandlePodCleanups() error {
 	return nil
 }
 
-// podKiller launches a goroutine to kill a pod received from the channel if
-// another goroutine isn't already in action.
+// podKiller launches a goroutine to kill a pod received from the channel
+// if another goroutine isn't already in action.
+// Kubelet.podKillingCh 成员在 NewMainKubelet() 函数中被初始化,
+// 在 Kubelet.deletePod() 函数中写入数据.
 func (kl *Kubelet) podKiller() {
 	killing := sets.NewString()
 	// guard for the killing set

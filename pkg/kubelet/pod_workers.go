@@ -140,8 +140,14 @@ type podWorkers struct {
 	podCache kubecontainer.Cache
 }
 
-func newPodWorkers(syncPodFn syncPodFnType, recorder record.EventRecorder, workQueue queue.WorkQueue,
-	resyncInterval, backOffPeriod time.Duration, podCache kubecontainer.Cache) *podWorkers {
+func newPodWorkers(
+	syncPodFn syncPodFnType, 
+	recorder record.EventRecorder, 
+	workQueue queue.WorkQueue,
+	resyncInterval, 
+	backOffPeriod time.Duration, 
+	podCache kubecontainer.Cache,
+) *podWorkers {
 	return &podWorkers{
 		podUpdates:                map[types.UID]chan UpdatePodOptions{},
 		isWorking:                 map[types.UID]bool{},

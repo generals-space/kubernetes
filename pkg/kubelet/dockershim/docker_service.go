@@ -459,8 +459,9 @@ func (ds *dockerService) Start() error {
 	return ds.containerManager.Start()
 }
 
-// initCleanup is responsible for cleaning up any crufts left by previous
-// runs. If there are any errros, it simply logs them.
+// initCleanup is responsible for cleaning up any crufts 
+// left by previous runs. 
+// If there are any errros, it simply logs them.
 func (ds *dockerService) initCleanup() {
 	errors := ds.platformSpecificContainerInitCleanup()
 

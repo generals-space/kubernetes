@@ -33,6 +33,9 @@ const maxMsgSize = 1024 * 1024 * 16
 // DockerServer is the grpc server of dockershim.
 type DockerServer struct {
 	// endpoint is the endpoint to serve on.
+	// 一般为 /var/run/dockershim.sock 
+	// 每当创建一个 docker 容器都会同时创建一个 containerd-shim 进程,
+	// 且ta们都指向这个 dockershim.sock 文件.
 	endpoint string
 	// service is the docker service which implements runtime and image services.
 	service dockershim.CRIService

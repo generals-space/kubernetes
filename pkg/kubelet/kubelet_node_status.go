@@ -402,6 +402,9 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	// apiserver cache (the data might be slightly delayed but it doesn't
 	// seem to cause more conflict - the delays are pretty small).
 	// If it result in a conflict, all retries are served directly from etcd.
+	// 
+	// 大型集群中, node 向 apiserver 上报节点状态将是 apiserver 与 etcd 的
+	// 主要压力来源.
 	opts := metav1.GetOptions{}
 	if tryNumber == 0 {
 		util.FromApiserverCache(&opts)
@@ -417,6 +420,8 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	}
 
 	podCIDRChanged := false
+	// node 的 PodCIDRs 应该就是在 kubeadm 在 setup 集群时配置范围.
+	// 没有见过为 node 指定这个值的.
 	if len(node.Spec.PodCIDRs) != 0 {
 		// Pod CIDR could have been updated before, so we cannot rely on
 		// node.Spec.PodCIDR being non-empty. We also need to know if pod CIDR is
@@ -430,26 +435,28 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	kl.setNodeStatus(node)
 
 	now := kl.clock.Now()
+	// 1.16.2 版本中, NodeLease 特性是默认开启的.
+	// 如果此时还没到下次更新的时间点, 判断一下直接返回.
 	if utilfeature.DefaultFeatureGate.Enabled(features.NodeLease) && 
 		now.Before(kl.lastStatusReportTime.Add(kl.nodeStatusReportFrequency)) {
 		if !podCIDRChanged && 
 			!nodeStatusHasChanged(&originalNode.Status, &node.Status) {
-			// We must mark the volumes as ReportedInUse in volume manager's dsw even
-			// if no changes were made to the node status (no volumes were added or removed
-			// from the VolumesInUse list).
+			// We must mark the volumes as ReportedInUse in volume manager's dsw 
+			// even if no changes were made to the node status 
+			// (no volumes were added or removed from the VolumesInUse list).
 			//
 			// The reason is that on a kubelet restart, the volume manager's dsw is
-			// repopulated and the volume ReportedInUse is initialized to false, while the
-			// VolumesInUse list from the Node object still contains the state from the
-			// previous kubelet instantiation.
+			// repopulated and the volume ReportedInUse is initialized to false, 
+			// while the VolumesInUse list from the Node object still 
+			// contains the state from the previous kubelet instantiation.
 			//
-			// Once the volumes are added to the dsw, the ReportedInUse field needs to be
-			// synced from the VolumesInUse list in the Node.Status.
+			// Once the volumes are added to the dsw, the ReportedInUse field needs
+			// to be synced from the VolumesInUse list in the Node.Status.
 			//
 			// The MarkVolumesAsReportedInUse() call cannot be performed in dsw directly
 			// because it does not have access to the Node object.
-			// This also cannot be populated on node status manager init because the volume
-			// may not have been added to dsw at that time.
+			// This also cannot be populated on node status manager init 
+			// because the volume may not have been added to dsw at that time.
 			kl.volumeManager.MarkVolumesAsReportedInUse(node.Status.VolumesInUse)
 			return nil
 		}
@@ -467,14 +474,14 @@ func (kl *Kubelet) tryUpdateNodeStatus(tryNumber int) error {
 	}
 	kl.lastStatusReportTime = now
 	kl.setLastObservedNodeAddresses(updatedNode.Status.Addresses)
-	// If update finishes successfully, mark the volumeInUse as reportedInUse to indicate
-	// those volumes are already updated in the node's status
+	// If update finishes successfully, mark the volumeInUse as reportedInUse 
+	// to indicate those volumes are already updated in the node's status
 	kl.volumeManager.MarkVolumesAsReportedInUse(updatedNode.Status.VolumesInUse)
 	return nil
 }
 
-// recordNodeStatusEvent records an event of the given type with the given
-// message for the node.
+// recordNodeStatusEvent records an event of the given type 
+// with the given message for the node.
 func (kl *Kubelet) recordNodeStatusEvent(eventType, event string) {
 	klog.V(2).Infof("Recording %s event message for node %s", event, kl.nodeName)
 	// TODO: This requires a transaction, either both node status is updated

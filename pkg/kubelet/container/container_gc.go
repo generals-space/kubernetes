@@ -64,8 +64,13 @@ type realContainerGC struct {
 	sourcesReadyProvider SourcesReadyProvider
 }
 
-// New ContainerGC instance with the specified policy.
-func NewContainerGC(runtime Runtime, policy ContainerGCPolicy, sourcesReadyProvider SourcesReadyProvider) (ContainerGC, error) {
+// NewContainerGC instance with the specified policy.
+// caller: pkg/kubelet/kubelet.go -> NewMainKubelet()
+func NewContainerGC(
+	runtime Runtime, 
+	policy ContainerGCPolicy, 
+	sourcesReadyProvider SourcesReadyProvider,
+) (ContainerGC, error) {
 	if policy.MinAge < 0 {
 		return nil, fmt.Errorf("invalid minimum garbage collection age: %v", policy.MinAge)
 	}
