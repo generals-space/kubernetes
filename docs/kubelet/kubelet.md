@@ -5,7 +5,6 @@
 对于`container`的操作在`pkg/kubelet/container/runtime.go`中定义.
 
 
-`pkg/kubelet/kubelet.go` -> `Run()` -> `syncLoop()` ->`syncLoopIteration()`
 
 ------
 

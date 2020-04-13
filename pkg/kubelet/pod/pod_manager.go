@@ -177,8 +177,8 @@ func isPodInTerminatedState(pod *v1.Pod) bool {
 	return pod.Status.Phase == v1.PodFailed || pod.Status.Phase == v1.PodSucceeded
 }
 
-// updatePodsInternal replaces the given pods in the current state of the
-// manager, updating the various indices. 
+// updatePodsInternal replaces the given pods in the current state 
+// of the manager, updating the various indices. 
 // The caller is assumed to hold the lock.
 func (pm *basicManager) updatePodsInternal(pods ...*v1.Pod) {
 	for _, pod := range pods {

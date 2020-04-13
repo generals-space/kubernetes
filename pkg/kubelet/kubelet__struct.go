@@ -77,6 +77,7 @@ type Kubelet struct {
 	onRepeatedHeartbeatFailure func()
 
 	// podWorkers handle syncing Pods in response to events.
+	// 在 NewMainKubelet() 函数中被初始化, 主要调用 Kubelet.syncPod() 方法
 	podWorkers PodWorkers
 
 	// resyncInterval is the interval between periodic full reconciliations of

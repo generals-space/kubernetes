@@ -140,6 +140,9 @@ type podWorkers struct {
 	podCache kubecontainer.Cache
 }
 
+// caller: pkg/kubelet/kubelet.go -> NewMainKubelet()
+// 传入的 syncPodFn 是 Kubelet.syncPod() 方法.
+// 返回值被赋值给了 Kubelet.podWorkers 成员.
 func newPodWorkers(
 	syncPodFn syncPodFnType, 
 	recorder record.EventRecorder, 
@@ -161,23 +164,35 @@ func newPodWorkers(
 	}
 }
 
+// caller: podWorkers.UpdatePod() 只有这一处
 func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 	var lastSyncTime time.Time
 	for update := range podUpdates {
 		err := func() error {
 			podUID := update.Pod.UID
-			// This is a blocking call that would return only if the cache
-			// has an entry for the pod that is newer than minRuntimeCache
-			// Time. This ensures the worker doesn't start syncing until
-			// after the cache is at least newer than the finished time of
-			// the previous sync.
+			// This is a blocking call that would return only if 
+			// the cache has an entry for the pod 
+			// that is newer than minRuntimeCache Time. 
+			// This ensures the worker doesn't start syncing until
+			// after the cache is at least newer than the
+			// finished time of the previous sync.
+			//
+			// 这是一个阻塞方法, 只能等待 podCache 中存在此 Pod 的信息后才能返回.
+			// status 表示目标 Pod 当前的状态.
 			status, err := p.podCache.GetNewerThan(podUID, lastSyncTime)
 			if err != nil {
 				// This is the legacy event thrown by manage pod loop
 				// all other events are now dispatched from syncPodFn
-				p.recorder.Eventf(update.Pod, v1.EventTypeWarning, events.FailedSync, "error determining status: %v", err)
+				p.recorder.Eventf(
+					update.Pod, 
+					v1.EventTypeWarning, 
+					events.FailedSync, 
+					"error determining status: %v", 
+					err,
+				)
 				return err
 			}
+			// 这里的 syncPodFn 是 Kubelet.syncPod()
 			err = p.syncPodFn(syncPodOptions{
 				mirrorPod:      update.MirrorPod,
 				pod:            update.Pod,
@@ -193,15 +208,22 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan UpdatePodOptions) {
 			update.OnCompleteFunc(err)
 		}
 		if err != nil {
-			// IMPORTANT: we do not log errors here, the syncPodFn is responsible for logging errors
-			klog.Errorf("Error syncing pod %s (%q), skipping: %v", update.Pod.UID, format.Pod(update.Pod), err)
+			// IMPORTANT: we do not log errors here, 
+			// the syncPodFn is responsible for logging errors
+			klog.Errorf(
+				"Error syncing pod %s (%q), skipping: %v", 
+				update.Pod.UID, 
+				format.Pod(update.Pod), 
+				err,
+			)
 		}
 		p.wrapUp(update.Pod.UID, err)
 	}
 }
 
 // Apply the new setting to the specified pod.
-// If the options provide an OnCompleteFunc, the function is invoked if the update is accepted.
+// If the options provide an OnCompleteFunc, 
+// the function is invoked if the update is accepted.
 // Update requests are ignored if a kill pod request is pending.
 func (p *podWorkers) UpdatePod(options *UpdatePodOptions) {
 	pod := options.Pod
@@ -232,7 +254,8 @@ func (p *podWorkers) UpdatePod(options *UpdatePodOptions) {
 		p.isWorking[pod.UID] = true
 		podUpdates <- *options
 	} else {
-		// if a request to kill a pod is pending, we do not let anything overwrite that request.
+		// if a request to kill a pod is pending, 
+		// we do not let anything overwrite that request.
 		update, found := p.lastUndeliveredWorkUpdate[pod.UID]
 		if !found || update.UpdateType != kubetypes.SyncPodKill {
 			p.lastUndeliveredWorkUpdate[pod.UID] = *options
@@ -306,7 +329,8 @@ func killPodNow(podWorkers PodWorkers, recorder record.EventRecorder) eviction.K
 		}
 
 		// we timeout and return an error if we don't get a callback within a reasonable time.
-		// the default timeout is relative to the grace period (we settle on 10s to wait for kubelet->runtime traffic to complete in sigkill)
+		// the default timeout is relative to the grace period
+		// (we settle on 10s to wait for kubelet->runtime traffic to complete in sigkill)
 		timeout := int64(gracePeriod + (gracePeriod / 2))
 		minTimeout := int64(10)
 		if timeout < minTimeout {
@@ -338,7 +362,11 @@ func killPodNow(podWorkers PodWorkers, recorder record.EventRecorder) eviction.K
 		case r := <-ch:
 			return r.err
 		case <-time.After(timeoutDuration):
-			recorder.Eventf(pod, v1.EventTypeWarning, events.ExceededGracePeriod, "Container runtime did not kill the pod within specified grace period.")
+			recorder.Eventf(
+				pod, v1.EventTypeWarning, 
+				events.ExceededGracePeriod, 
+				"Container runtime did not kill the pod within specified grace period.",
+			)
 			return fmt.Errorf("timeout waiting to kill pod")
 		}
 	}

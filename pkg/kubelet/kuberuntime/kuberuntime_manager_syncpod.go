@@ -36,28 +36,50 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 ) (result kubecontainer.PodSyncResult) {
 	// Step 1: Compute sandbox and container changes.
 	podContainerChanges := m.computePodActions(pod, podStatus)
-	klog.V(3).Infof("computePodActions got %+v for pod %q", podContainerChanges, format.Pod(pod))
+	klog.V(3).Infof(
+		"computePodActions got %+v for pod %q", 
+		podContainerChanges, 
+		format.Pod(pod),
+	)
 	if podContainerChanges.CreateSandbox {
 		ref, err := ref.GetReference(legacyscheme.Scheme, pod)
 		if err != nil {
 			klog.Errorf("Couldn't make a ref to pod %q: '%v'", format.Pod(pod), err)
 		}
 		if podContainerChanges.SandboxID != "" {
-			m.recorder.Eventf(ref, v1.EventTypeNormal, events.SandboxChanged, "Pod sandbox changed, it will be killed and re-created.")
+			m.recorder.Eventf(
+				ref, 
+				v1.EventTypeNormal, 
+				events.SandboxChanged, 
+				"Pod sandbox changed, it will be killed and re-created.",
+			)
 		} else {
-			klog.V(4).Infof("SyncPod received new pod %q, will create a sandbox for it", format.Pod(pod))
+			klog.V(4).Infof(
+				"SyncPod received new pod %q, will create a sandbox for it", 
+				format.Pod(pod),
+			)
 		}
 	}
 
 	// Step 2: Kill the pod if the sandbox has changed.
 	if podContainerChanges.KillPod {
 		if podContainerChanges.CreateSandbox {
-			klog.V(4).Infof("Stopping PodSandbox for %q, will start new one", format.Pod(pod))
+			klog.V(4).Infof(
+				"Stopping PodSandbox for %q, will start new one", 
+				format.Pod(pod),
+			)
 		} else {
-			klog.V(4).Infof("Stopping PodSandbox for %q because all other containers are dead.", format.Pod(pod))
+			klog.V(4).Infof(
+				"Stopping PodSandbox for %q because all other containers are dead.", 
+				format.Pod(pod),
+			)
 		}
 
-		killResult := m.killPodWithSyncResult(pod, kubecontainer.ConvertPodStatusToRunningPod(m.runtimeName, podStatus), nil)
+		killResult := m.killPodWithSyncResult(
+			pod, 
+			kubecontainer.ConvertPodStatusToRunningPod(m.runtimeName, podStatus),
+			nil,
+		)
 		result.AddPodSyncResult(killResult)
 		if killResult.Error() != nil {
 			klog.Errorf("killPodWithSyncResult failed: %v", killResult.Error())
