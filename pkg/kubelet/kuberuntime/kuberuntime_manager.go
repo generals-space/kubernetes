@@ -145,6 +145,8 @@ type LegacyLogProvider interface {
 }
 
 // NewKubeGenericRuntimeManager creates a new kubeGenericRuntimeManager
+// caller: pkg/kubelet/kubelet.go -> NewMainKubelet()
+// 返回值被赋值给 Kubelet 的 containerRuntime, streamingRuntime, runner 3个成员
 func NewKubeGenericRuntimeManager(
 	recorder record.EventRecorder,
 	livenessManager proberesults.Manager,
@@ -375,7 +377,8 @@ type containerToKillInfo struct {
 
 // podActions keeps information what to do for a pod.
 type podActions struct {
-	// Stop all running (regular, init and ephemeral) containers and the sandbox for the pod.
+	// Stop all running (regular, init and ephemeral) containers
+	// and the sandbox for the pod.
 	KillPod bool
 	// Whether need to create a new sandbox. If needed to kill pod and create
 	// a new pod sandbox, all init containers need to be purged (i.e., removed).
@@ -402,9 +405,15 @@ type podActions struct {
 
 // podSandboxChanged checks whether the spec of the pod is changed and returns
 // (changed, new attempt, original sandboxID if exist).
-func (m *kubeGenericRuntimeManager) podSandboxChanged(pod *v1.Pod, podStatus *kubecontainer.PodStatus) (bool, uint32, string) {
+func (m *kubeGenericRuntimeManager) podSandboxChanged(
+	pod *v1.Pod, 
+	podStatus *kubecontainer.PodStatus,
+) (bool, uint32, string) {
 	if len(podStatus.SandboxStatuses) == 0 {
-		klog.V(2).Infof("No sandbox for pod %q can be found. Need to start a new one", format.Pod(pod))
+		klog.V(2).Infof(
+			"No sandbox for pod %q can be found. Need to start a new one", 
+			format.Pod(pod),
+		)
 		return true, 0, ""
 	}
 
@@ -415,7 +424,8 @@ func (m *kubeGenericRuntimeManager) podSandboxChanged(pod *v1.Pod, podStatus *ku
 		}
 	}
 
-	// Needs to create a new sandbox when readySandboxCount > 1 or the ready sandbox is not the latest one.
+	// Needs to create a new sandbox when readySandboxCount > 1 or
+	// the ready sandbox is not the latest one.
 	sandboxStatus := podStatus.SandboxStatuses[0]
 	if readySandboxCount > 1 {
 		klog.V(2).Infof("More than 1 sandboxes for pod %q are ready. Need to reconcile them", format.Pod(pod))

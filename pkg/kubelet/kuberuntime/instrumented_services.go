@@ -24,13 +24,20 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/metrics"
 )
 
-// instrumentedRuntimeService wraps the RuntimeService and records the operations
-// and errors metrics.
+// instrumentedRuntimeService wraps the RuntimeService and
+// records the operations and errors metrics.
+// 实现了 staging/src/k8s.io/cri-api/pkg/apis/services.go 
+// 中的 ContainerManager 接口.
+// 但不是真正的实现位置, 这个结构体只是对 server 成员做了一层封装,
+// service 实际上是 pkg/kubelet/remote/remote_runtime.go
+// 中的 RemoteRuntimeService 结构体.
 type instrumentedRuntimeService struct {
 	service internalapi.RuntimeService
 }
 
 // Creates an instrumented RuntimeInterface from an existing RuntimeService.
+// caller: pkg/kubelet/kuberuntime/kuberuntime_manager.go -> NewKubeGenericRuntimeManager()
+// 返回值被赋值给 kubeGenericRuntimeManager.runtimeService 成员.
 func newInstrumentedRuntimeService(service internalapi.RuntimeService) internalapi.RuntimeService {
 	return &instrumentedRuntimeService{service: service}
 }

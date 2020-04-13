@@ -34,8 +34,11 @@ import (
 )
 
 // RemoteRuntimeService is a gRPC implementation of internalapi.RuntimeService.
+// 实现了 staging/src/k8s.io/cri-api/pkg/apis/services.go
+// 中的 ContainerManager 接口, 用于创建 container(不是 Pod)
 type RemoteRuntimeService struct {
 	timeout       time.Duration
+	// 连接 /var/run/dockershim.sock 的 grpc 客户端对象.
 	runtimeClient runtimeapi.RuntimeServiceClient
 	// Cache last per-container error message to reduce log spam
 	logReduction *logreduction.LogReduction
@@ -47,7 +50,14 @@ const (
 )
 
 // NewRemoteRuntimeService creates a new internalapi.RuntimeService.
-func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration) (internalapi.RuntimeService, error) {
+// caller: pkg/kubelet/kubelet.go -> getRuntimeAndImageServices()
+// endpoint: /var/run/dockershim.sock, 与 docker.sock 同目录.
+// 每个 docker 容器在启动时都会创建一个新的 containerd-shim 进程, 
+// 并指定 dockershim.sock 路径
+func NewRemoteRuntimeService(
+	endpoint string, 
+	connectionTimeout time.Duration,
+) (internalapi.RuntimeService, error) {
 	klog.V(3).Infof("Connecting to runtime service %s", endpoint)
 	addr, dailer, err := util.GetAddressAndDialer(endpoint)
 	if err != nil {
@@ -56,7 +66,13 @@ func NewRemoteRuntimeService(endpoint string, connectionTimeout time.Duration) (
 	ctx, cancel := context.WithTimeout(context.Background(), connectionTimeout)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithDialer(dailer), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxMsgSize)))
+	conn, err := grpc.DialContext(
+		ctx, 
+		addr, 
+		grpc.WithInsecure(), 
+		grpc.WithDialer(dailer), 
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxMsgSize)),
+	)
 	if err != nil {
 		klog.Errorf("Connect remote runtime %s failed: %v", addr, err)
 		return nil, err
@@ -187,7 +203,12 @@ func (r *RemoteRuntimeService) ListPodSandbox(filter *runtimeapi.PodSandboxFilte
 }
 
 // CreateContainer creates a new container in the specified PodSandbox.
-func (r *RemoteRuntimeService) CreateContainer(podSandBoxID string, config *runtimeapi.ContainerConfig, sandboxConfig *runtimeapi.PodSandboxConfig) (string, error) {
+// 一直忘记 docker 还有一个 create 子命令, 可以只创建而不启动.
+func (r *RemoteRuntimeService) CreateContainer(
+	podSandBoxID string, 
+	config *runtimeapi.ContainerConfig, 
+	sandboxConfig *runtimeapi.PodSandboxConfig,
+) (string, error) {
 	ctx, cancel := getContextWithTimeout(r.timeout)
 	defer cancel()
 
@@ -197,12 +218,19 @@ func (r *RemoteRuntimeService) CreateContainer(podSandBoxID string, config *runt
 		SandboxConfig: sandboxConfig,
 	})
 	if err != nil {
-		klog.Errorf("CreateContainer in sandbox %q from runtime service failed: %v", podSandBoxID, err)
+		klog.Errorf(
+			"CreateContainer in sandbox %q from runtime service failed: %v", 
+			podSandBoxID, 
+			err,
+		)
 		return "", err
 	}
 
 	if resp.ContainerId == "" {
-		errorMessage := fmt.Sprintf("ContainerId is not set for container %q", config.GetMetadata())
+		errorMessage := fmt.Sprintf(
+			"ContainerId is not set for container %q", 
+			config.GetMetadata(),
+		)
 		klog.Errorf("CreateContainer failed: %s", errorMessage)
 		return "", errors.New(errorMessage)
 	}

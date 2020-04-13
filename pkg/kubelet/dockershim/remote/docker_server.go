@@ -44,6 +44,10 @@ type DockerServer struct {
 }
 
 // NewDockerServer creates the dockershim grpc server.
+// caller: pkg/kubelet/kubelet.go -> NewMainKubelet()
+// remoteRuntimeEndpoint: /var/run/dockershim.sock, 与 docker.sock 同目录.
+// 每个 docker 容器在启动时都会创建一个新的 containerd-shim 进程, 
+// 并指定 dockershim.sock 路径
 func NewDockerServer(endpoint string, s dockershim.CRIService) *DockerServer {
 	return &DockerServer{
 		endpoint: endpoint,

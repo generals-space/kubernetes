@@ -103,8 +103,8 @@ func (m *kubeGenericRuntimeManager) startContainer(
 ) (string, error) {
 	// Step 1: pull the image.
 	imageRef, msg, err := m.imagePuller.EnsureImageExists(
-							pod, container, pullSecrets, podSandboxConfig,
-						)
+		pod, container, pullSecrets, podSandboxConfig,
+	)
 	if err != nil {
 		s, _ := grpcstatus.FromError(err)
 		m.recordContainerEvent(
@@ -135,13 +135,27 @@ func (m *kubeGenericRuntimeManager) startContainer(
 		restartCount = containerStatus.RestartCount + 1
 	}
 
-	containerConfig, cleanupAction, err := m.generateContainerConfig(container, pod, restartCount, podIP, imageRef)
+	containerConfig, cleanupAction, err := m.generateContainerConfig(
+		container, 
+		pod, 
+		restartCount, 
+		podIP, 
+		imageRef,
+	)
 	if cleanupAction != nil {
 		defer cleanupAction()
 	}
 	if err != nil {
 		s, _ := grpcstatus.FromError(err)
-		m.recordContainerEvent(pod, container, "", v1.EventTypeWarning, events.FailedToCreateContainer, "Error: %v", s.Message())
+		m.recordContainerEvent(
+			pod, 
+			container, 
+			"", 
+			v1.EventTypeWarning, 
+			events.FailedToCreateContainer, 
+			"Error: %v", 
+			s.Message(),
+		)
 		return s.Message(), ErrCreateContainerConfig
 	}
 
@@ -192,24 +206,46 @@ func (m *kubeGenericRuntimeManager) startContainer(
 		)
 		return s.Message(), kubecontainer.ErrRunContainer
 	}
-	m.recordContainerEvent(pod, container, containerID, v1.EventTypeNormal, events.StartedContainer, fmt.Sprintf("Started container %s", container.Name))
+	m.recordContainerEvent(
+		pod, 
+		container, 
+		containerID, 
+		v1.EventTypeNormal, 
+		events.StartedContainer, 
+		fmt.Sprintf("Started container %s", container.Name),
+	)
 
-	// Symlink container logs to the legacy container log location for cluster logging
-	// support.
+	// Symlink container logs to the legacy container log location 
+	// for cluster logging support.
 	// TODO(random-liu): Remove this after cluster logging supports CRI container log path.
 	containerMeta := containerConfig.GetMetadata()
 	sandboxMeta := podSandboxConfig.GetMetadata()
-	legacySymlink := legacyLogSymlink(containerID, containerMeta.Name, sandboxMeta.Name,
-		sandboxMeta.Namespace)
-	containerLog := filepath.Join(podSandboxConfig.LogDirectory, containerConfig.LogPath)
-	// only create legacy symlink if containerLog path exists (or the error is not IsNotExist).
-	// Because if containerLog path does not exist, only dandling legacySymlink is created.
-	// This dangling legacySymlink is later removed by container gc, so it does not make sense
-	// to create it in the first place. it happens when journald logging driver is used with docker.
+	legacySymlink := legacyLogSymlink(
+		containerID, 
+		containerMeta.Name, 
+		sandboxMeta.Name,
+		sandboxMeta.Namespace,
+	)
+	containerLog := filepath.Join(
+		podSandboxConfig.LogDirectory, 
+		containerConfig.LogPath,
+	)
+	// only create legacy symlink if containerLog path exists
+	// (or the error is not IsNotExist).
+	// Because if containerLog path does not exist, 
+	// only dandling legacySymlink is created.
+	// This dangling legacySymlink is later removed by container gc, 
+	// so it does not make sense to create it in the first place. 
+	// it happens when journald logging driver is used with docker.
 	if _, err := m.osInterface.Stat(containerLog); !os.IsNotExist(err) {
 		if err := m.osInterface.Symlink(containerLog, legacySymlink); err != nil {
-			klog.Errorf("Failed to create legacy symbolic link %q to container %q log %q: %v",
-				legacySymlink, containerID, containerLog, err)
+			klog.Errorf(
+				"Failed to create legacy symbolic link %q to container %q log %q: %v",
+				legacySymlink, 
+				containerID, 
+				containerLog, 
+				err,
+			)
 		}
 	}
 
@@ -219,12 +255,37 @@ func (m *kubeGenericRuntimeManager) startContainer(
 			Type: m.runtimeName,
 			ID:   containerID,
 		}
-		msg, handlerErr := m.runner.Run(kubeContainerID, pod, container, container.Lifecycle.PostStart)
+		msg, handlerErr := m.runner.Run(
+			kubeContainerID, 
+			pod, 
+			container, 
+			container.Lifecycle.PostStart,
+		)
 		if handlerErr != nil {
-			m.recordContainerEvent(pod, container, kubeContainerID.ID, v1.EventTypeWarning, events.FailedPostStartHook, msg)
-			if err := m.killContainer(pod, kubeContainerID, container.Name, "FailedPostStartHook", nil); err != nil {
-				klog.Errorf("Failed to kill container %q(id=%q) in pod %q: %v, %v",
-					container.Name, kubeContainerID.String(), format.Pod(pod), ErrPostStartHook, err)
+			m.recordContainerEvent(
+				pod, 
+				container, 
+				kubeContainerID.ID, 
+				v1.EventTypeWarning, 
+				events.FailedPostStartHook, 
+				msg,
+			)
+			err := m.killContainer(
+				pod, 
+				kubeContainerID, 
+				container.Name, 
+				"FailedPostStartHook", 
+				nil,
+			)
+			if err != nil {
+				klog.Errorf(
+					"Failed to kill container %q(id=%q) in pod %q: %v, %v",
+					container.Name, 
+					kubeContainerID.String(), 
+					format.Pod(pod), 
+					ErrPostStartHook, 
+					err,
+				)
 			}
 			return msg, fmt.Errorf("%s: %v", ErrPostStartHook, handlerErr)
 		}
@@ -234,7 +295,13 @@ func (m *kubeGenericRuntimeManager) startContainer(
 }
 
 // generateContainerConfig generates container config for kubelet runtime v1.
-func (m *kubeGenericRuntimeManager) generateContainerConfig(container *v1.Container, pod *v1.Pod, restartCount int, podIP, imageRef string) (*runtimeapi.ContainerConfig, func(), error) {
+func (m *kubeGenericRuntimeManager) generateContainerConfig(
+	container *v1.Container, 
+	pod *v1.Pod, 
+	restartCount int, 
+	podIP, 
+	imageRef string,
+) (*runtimeapi.ContainerConfig, func(), error) {
 	opts, cleanupAction, err := m.runtimeHelper.GenerateRunContainerOptions(pod, container, podIP)
 	if err != nil {
 		return nil, nil, err

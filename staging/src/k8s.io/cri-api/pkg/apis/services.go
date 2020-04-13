@@ -30,6 +30,8 @@ type RuntimeVersioner interface {
 
 // ContainerManager contains methods to manipulate containers managed by a
 // container runtime. The methods are thread-safe.
+// 由 pkg/kubelet/remote/remote_runtime.go
+// 中的 RemoteRuntimeService 结构体实现
 type ContainerManager interface {
 	// CreateContainer creates a new container in specified PodSandbox.
 	CreateContainer(podSandboxID string, config *runtimeapi.ContainerConfig, sandboxConfig *runtimeapi.PodSandboxConfig) (string, error)

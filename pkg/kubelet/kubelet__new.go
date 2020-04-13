@@ -400,6 +400,9 @@ func NewMainKubelet(
 
 	klet.statusManager = status.NewManager(klet.kubeClient, klet.podManager, klet)
 
+	// remoteRuntimeEndpoint: /var/run/dockershim.sock, 与 docker.sock 同目录.
+	// 每个 docker 容器在启动时都会创建一个新的 containerd-shim 进程, 
+	// 并指定 dockershim.sock 路径
 	if remoteRuntimeEndpoint != "" {
 		// remoteImageEndpoint is same as remoteRuntimeEndpoint if not explicitly specified
 		if remoteImageEndpoint == "" {

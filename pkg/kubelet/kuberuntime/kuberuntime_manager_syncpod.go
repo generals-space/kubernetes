@@ -92,12 +92,32 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 	} else {
 		// Step 3: kill any running containers in this pod which are not to keep.
 		for containerID, containerInfo := range podContainerChanges.ContainersToKill {
-			klog.V(3).Infof("Killing unwanted container %q(id=%q) for pod %q", containerInfo.name, containerID, format.Pod(pod))
-			killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, containerInfo.name)
+			klog.V(3).Infof(
+				"Killing unwanted container %q(id=%q) for pod %q", 
+				containerInfo.name, 
+				containerID, 
+				format.Pod(pod),
+			)
+			killContainerResult := kubecontainer.NewSyncResult(
+				kubecontainer.KillContainer, 
+				containerInfo.name,
+			)
 			result.AddSyncResult(killContainerResult)
-			if err := m.killContainer(pod, containerID, containerInfo.name, containerInfo.message, nil); err != nil {
+			if err := m.killContainer(
+				pod, 
+				containerID, 
+				containerInfo.name, 
+				containerInfo.message, 
+				nil,
+			); err != nil {
 				killContainerResult.Fail(kubecontainer.ErrKillContainer, err.Error())
-				klog.Errorf("killContainer %q(id=%q) for pod %q failed: %v", containerInfo.name, containerID, format.Pod(pod), err)
+				klog.Errorf(
+					"killContainer %q(id=%q) for pod %q failed: %v", 
+					containerInfo.name, 
+					containerID, 
+					format.Pod(pod), 
+					err,
+				)
 				return
 			}
 		}
@@ -129,7 +149,10 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 		var err error
 
 		klog.V(4).Infof("Creating sandbox for pod %q", format.Pod(pod))
-		createSandboxResult := kubecontainer.NewSyncResult(kubecontainer.CreatePodSandbox, format.Pod(pod))
+		createSandboxResult := kubecontainer.NewSyncResult(
+			kubecontainer.CreatePodSandbox, 
+			format.Pod(pod),
+		)
 		result.AddSyncResult(createSandboxResult)
 		podSandboxID, msg, err = m.createPodSandbox(pod, podContainerChanges.Attempt)
 		if err != nil {
@@ -139,7 +162,13 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 			if referr != nil {
 				klog.Errorf("Couldn't make a ref to pod %q: '%v'", format.Pod(pod), referr)
 			}
-			m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedCreatePodSandBox, "Failed create pod sandbox: %v", err)
+			m.recorder.Eventf(
+				ref, 
+				v1.EventTypeWarning, 
+				events.FailedCreatePodSandBox, 
+				"Failed create pod sandbox: %v", 
+				err,
+			)
 			return
 		}
 		klog.V(4).Infof("Created PodSandbox %q for pod %q", podSandboxID, format.Pod(pod))
@@ -150,8 +179,18 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 			if referr != nil {
 				klog.Errorf("Couldn't make a ref to pod %q: '%v'", format.Pod(pod), referr)
 			}
-			m.recorder.Eventf(ref, v1.EventTypeWarning, events.FailedStatusPodSandBox, "Unable to get pod sandbox status: %v", err)
-			klog.Errorf("Failed to get pod sandbox status: %v; Skipping pod %q", err, format.Pod(pod))
+			m.recorder.Eventf(
+				ref, 
+				v1.EventTypeWarning, 
+				events.FailedStatusPodSandBox, 
+				"Unable to get pod sandbox status: %v", 
+				err,
+			)
+			klog.Errorf(
+				"Failed to get pod sandbox status: %v; Skipping pod %q", 
+				err, 
+				format.Pod(pod),
+			)
 			result.Fail(err)
 			return
 		}
@@ -159,9 +198,14 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 		// If we ever allow updating a pod from non-host-network to
 		// host-network, we may use a stale IP.
 		if !kubecontainer.IsHostNetworkPod(pod) {
-			// Overwrite the podIPs passed in the pod status, since we just started the pod sandbox.
+			// Overwrite the podIPs passed in the pod status, 
+			// since we just started the pod sandbox.
 			podIPs = m.determinePodSandboxIPs(pod.Namespace, pod.Name, podSandboxStatus)
-			klog.V(4).Infof("Determined the ip %v for pod %q after sandbox changed", podIPs, format.Pod(pod))
+			klog.V(4).Infof(
+				"Determined the ip %v for pod %q after sandbox changed", 
+				podIPs, 
+				format.Pod(pod),
+			)
 		}
 	}
 
@@ -174,11 +218,21 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 	}
 
 	// Get podSandboxConfig for containers to start.
-	configPodSandboxResult := kubecontainer.NewSyncResult(kubecontainer.ConfigPodSandbox, podSandboxID)
+	configPodSandboxResult := kubecontainer.NewSyncResult(
+		kubecontainer.ConfigPodSandbox, 
+		podSandboxID,
+	)
 	result.AddSyncResult(configPodSandboxResult)
-	podSandboxConfig, err := m.generatePodSandboxConfig(pod, podContainerChanges.Attempt)
+	podSandboxConfig, err := m.generatePodSandboxConfig(
+		pod, 
+		podContainerChanges.Attempt,
+	)
 	if err != nil {
-		message := fmt.Sprintf("GeneratePodSandboxConfig for pod %q failed: %v", format.Pod(pod), err)
+		message := fmt.Sprintf(
+			"GeneratePodSandboxConfig for pod %q failed: %v", 
+			format.Pod(pod), 
+			err,
+		)
 		klog.Error(message)
 		configPodSandboxResult.Fail(kubecontainer.ErrConfigPodSandbox, message)
 		return
@@ -187,6 +241,8 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 	// Helper containing boilerplate common to starting all types of containers.
 	// typeName is a label used to describe this type of container in log messages,
 	// currently: "container", "init container" or "ephemeral container"
+	// 可以用于启动容器的通用函数, 除了常规的 container, 还有
+	// 初始化容器 initContainers, 和临时容器 ephemeralContainers
 	start := func(typeName string, container *v1.Container) error {
 		startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
 		result.AddSyncResult(startContainerResult)
@@ -199,10 +255,19 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 		}
 
 		klog.V(4).Infof("Creating %v %+v in pod %v", typeName, container, format.Pod(pod))
-		if msg, err := m.startContainer(podSandboxID, podSandboxConfig, container, pod, podStatus, pullSecrets, podIP); err != nil {
+		msg, err = m.startContainer(
+			podSandboxID, 
+			podSandboxConfig, 
+			container, 
+			pod, 
+			podStatus, 
+			pullSecrets, 
+			podIP,
+		)
+		if err != nil {
 			startContainerResult.Fail(err, msg)
-			// known errors that are logged in other places are logged at higher levels here to avoid
-			// repetitive log spam
+			// known errors that are logged in other places are logged at higher levels here
+			// to avoid repetitive log spam
 			switch {
 			case err == images.ErrImagePullBackOff:
 				klog.V(3).Infof("%v start failed: %v: %s", typeName, err, msg)
@@ -216,8 +281,10 @@ func (m *kubeGenericRuntimeManager) SyncPod(
 	}
 
 	// Step 5: start ephemeral containers
-	// These are started "prior" to init containers to allow running ephemeral containers even when there
-	// are errors starting an init container. In practice init containers will start first since ephemeral
+	// 貌似是 1.16 版本新增的特性, 还处于 alpha 阶段.
+	// These are started "prior" to init containers to allow running ephemeral containers 
+	// even when there are errors starting an init container. 
+	// In practice init containers will start first since ephemeral
 	// containers cannot be specified on pod creation.
 	if utilfeature.DefaultFeatureGate.Enabled(features.EphemeralContainers) {
 		for _, idx := range podContainerChanges.EphemeralContainersToStart {
