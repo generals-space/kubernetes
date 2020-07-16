@@ -126,7 +126,10 @@ func (h *HumanReadableGenerator) GenerateTable(obj runtime.Object, options Gener
 
 // TableHandler adds a print handler with a given set of columns to HumanReadableGenerator instance.
 // See ValidateRowPrintHandlerFunc for required method signature.
-func (h *HumanReadableGenerator) TableHandler(columnDefinitions []metav1beta1.TableColumnDefinition, printFunc interface{}) error {
+func (h *HumanReadableGenerator) TableHandler(
+	columnDefinitions []metav1beta1.TableColumnDefinition, 
+	printFunc interface{},
+) error {
 	printFuncValue := reflect.ValueOf(printFunc)
 	if err := ValidateRowPrintHandlerFunc(printFuncValue); err != nil {
 		utilruntime.HandleError(fmt.Errorf("unable to register print function: %v", err))

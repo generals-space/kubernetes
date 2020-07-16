@@ -618,7 +618,10 @@ func printPodList(podList *api.PodList, options printers.GenerateOptions) ([]met
 	return rows, nil
 }
 
-func printPod(pod *api.Pod, options printers.GenerateOptions) ([]metav1.TableRow, error) {
+func printPod(
+	pod *api.Pod, 
+	options printers.GenerateOptions,
+) ([]metav1.TableRow, error) {
 	restarts := 0
 	totalContainers := len(pod.Spec.Containers)
 	readyContainers := 0
@@ -1649,7 +1652,11 @@ func printDeployment(obj *apps.Deployment, options printers.GenerateOptions) ([]
 		// this shouldn't happen if LabelSelector passed validation
 		return nil, err
 	}
-	row.Cells = append(row.Cells, obj.Name, fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas)), int64(updatedReplicas), int64(availableReplicas), age)
+	row.Cells = append(
+		row.Cells, 
+		obj.Name, fmt.Sprintf("%d/%d", int64(readyReplicas), int64(desiredReplicas)), 
+		int64(updatedReplicas), int64(availableReplicas), age,
+	)
 	if options.Wide {
 		containers, images := layoutContainerCells(containers)
 		row.Cells = append(row.Cells, containers, images, selector.String())

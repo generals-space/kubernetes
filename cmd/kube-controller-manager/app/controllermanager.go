@@ -197,6 +197,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	}
 	// 在分布式资源锁中执行此函数.
 	// 注意, 只有成功获得锁的实例才可执行.
+	// 成为 leader 的 controller manager 实例需要担负起属于自己的责任
 	run := func(ctx context.Context) {
 		rootClientBuilder := controller.SimpleControllerClientBuilder{
 			// 这里已经算是闭包了
@@ -265,7 +266,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		close(controllerContext.InformersStarted)
 
 		select {}
-	}
+	} // run() 结束
 
 	if !c.ComponentConfig.Generic.LeaderElection.LeaderElect {
 		run(context.TODO())

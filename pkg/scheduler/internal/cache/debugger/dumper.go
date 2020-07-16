@@ -63,8 +63,10 @@ func (d *CacheDumper) dumpSchedulingQueue() {
 // printNodeInfo writes parts of NodeInfo to a string.
 func printNodeInfo(n *schedulernodeinfo.NodeInfo) string {
 	var nodeData strings.Builder
-	nodeData.WriteString(fmt.Sprintf("\nNode name: %+v\nRequested Resources: %+v\nAllocatable Resources:%+v\nNumber of Pods: %v\nPods:\n",
-		n.Node().Name, n.RequestedResource(), n.AllocatableResource(), len(n.Pods())))
+	nodeData.WriteString(
+		fmt.Sprintf("\nNode name: %+v\nRequested Resources: %+v\nAllocatable Resources:%+v\nNumber of Pods: %v\nPods:\n",
+		n.Node().Name, n.RequestedResource(), n.AllocatableResource(), len(n.Pods())),
+	)
 	// Dumping Pod Info
 	for _, p := range n.Pods() {
 		nodeData.WriteString(printPod(p))
@@ -74,5 +76,8 @@ func printNodeInfo(n *schedulernodeinfo.NodeInfo) string {
 
 // printPod writes parts of a Pod object to a string.
 func printPod(p *v1.Pod) string {
-	return fmt.Sprintf("name: %v, namespace: %v, uid: %v, phase: %v, nominated node: %v\n", p.Name, p.Namespace, p.UID, p.Status.Phase, p.Status.NominatedNodeName)
+	return fmt.Sprintf(
+		"name: %v, namespace: %v, uid: %v, phase: %v, nominated node: %v\n", 
+		p.Name, p.Namespace, p.UID, p.Status.Phase, p.Status.NominatedNodeName,
+	)
 }
