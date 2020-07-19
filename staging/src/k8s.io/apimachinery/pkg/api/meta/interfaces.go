@@ -98,6 +98,7 @@ type RESTMapping struct {
 	GroupVersionKind schema.GroupVersionKind
 
 	// Scope contains the information needed to deal with REST Resources that are in a resource hierarchy
+	// 表示一种资源的生效范围, 可选值有 root, namespace, root应该就是 cluster 范围生效吧...???
 	Scope RESTScope
 }
 

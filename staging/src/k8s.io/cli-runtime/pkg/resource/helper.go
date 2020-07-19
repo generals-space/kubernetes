@@ -29,6 +29,7 @@ import (
 
 var metadataAccessor = meta.NewAccessor()
 
+// Helper 就是封装过的 rest client
 // Helper provides methods for retrieving or mutating a RESTful
 // resource.
 type Helper struct {
@@ -49,6 +50,7 @@ func NewHelper(client RESTClient, mapping *meta.RESTMapping) *Helper {
 	}
 }
 
+// Get 调用 helper 中的 rest client 成员, 获取指定类型, 指定ns, 指定名称的资源对象.
 func (m *Helper) Get(namespace, name string, export bool) (runtime.Object, error) {
 	req := m.RESTClient.Get().
 		NamespaceIfScoped(namespace, m.NamespaceScoped).

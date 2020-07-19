@@ -340,6 +340,8 @@ func (o *ApplyOptions) Run() error {
 		OpenAPIGetter: o.DiscoveryClient,
 	}
 
+	fmt.Printf("========================= step 1")
+	fmt.Printf("======== builder: %+v\n", o.Builder)
 	// include the uninitialized objects by default if --prune is true
 	// unless explicitly set --include-uninitialized=false
 	r := o.Builder.
@@ -354,6 +356,8 @@ func (o *ApplyOptions) Run() error {
 	if err := r.Err(); err != nil {
 		return err
 	}
+	fmt.Printf("========================= step 2")
+	fmt.Printf("======== result: %+v\n", r)
 
 	var err error
 	if o.Prune {
@@ -372,6 +376,8 @@ func (o *ApplyOptions) Run() error {
 	var objs []runtime.Object
 
 	count := 0
+	// 参数info包含了将要创建或更新的资源信息(runtime.Object成员), 就是 yaml 中的全部内容.
+	// 该结构体中包含 rest client 成员, 可以说相当于一类特定资源的客户端.
 	err = r.Visit(func(info *resource.Info, err error) error {
 		if err != nil {
 			return err
@@ -383,7 +389,7 @@ func (o *ApplyOptions) Run() error {
 				return err
 			}
 		}
-
+		// 这里的 Namespaced() 应该是指资源本身是不是限于命名空间有效还是全局有效, 而不是在 yaml 文件中是否定义了 namepsace 字段.
 		if info.Namespaced() {
 			visitedNamespaces.Insert(info.Namespace)
 		}
@@ -469,6 +475,9 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 		// Print object only if output format other than "name" is specified
 		printObject := len(output) > 0 && !shortOutput
 
+		// 从 apiserver 那里查一下有没有目标资源, 如果有就更新, 没有要先创建.
+		// 不过这里的 Get() 是用的 info 本身的方法, 与 if{} 块中的 Create() 部分有点不一样,
+		// Get 中内置了 NewHelper() 构造方法, ta们并没有用同一样...rest client 是不是不能用同一个???
 		if err := info.Get(); err != nil {
 			if !errors.IsNotFound(err) {
 				return cmdutil.AddSourceToErr(fmt.Sprintf("retrieving current configuration of:\n%s\nfrom server for:", info.String()), info.Source, err)
@@ -505,11 +514,11 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 				objs = append(objs, info.Object)
 				return nil
 			}
-
 			printer, err := o.ToPrinter("created")
 			if err != nil {
 				return err
 			}
+			// 创建完成, 打印回显.
 			return printer.PrintObj(info.Object, o.Out)
 		}
 
@@ -606,6 +615,7 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 		}
 	}
 
+	// 一般来说, 到这里就结束了, 不会再往下继续
 	if !o.Prune {
 		return nil
 	}
