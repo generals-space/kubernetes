@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubectl/pkg/validation"
 )
 
+// 实现了 staging/src/k8s.io/kubectl/pkg/cmd/util/factory.go 中声明的 Factory 接口.
 type factoryImpl struct {
 	clientGetter genericclioptions.RESTClientGetter
 

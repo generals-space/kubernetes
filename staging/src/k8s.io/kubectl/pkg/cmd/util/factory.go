@@ -37,6 +37,7 @@ import (
 // TODO: make the functions interfaces
 // TODO: pass the various interfaces on the factory directly into the command constructors (so the
 // commands are decoupled from the factory).
+// 由 staging/src/k8s.io/kubectl/pkg/cmd/util/factory_client_access.go 中的 factoryImpl{} 结构体实现.
 type Factory interface {
 	genericclioptions.RESTClientGetter
 
