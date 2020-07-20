@@ -207,8 +207,10 @@ func (r *responder) Error(err error) {
 // resultFunc is a function that returns a rest result and can be run in a goroutine
 type resultFunc func() (runtime.Object, error)
 
-// finishRequest makes a given resultFunc asynchronous and handles errors returned by the response.
-// An api.Status object with status != success is considered an "error", which interrupts the normal response flow.
+// finishRequest makes a given resultFunc asynchronous 
+// and handles errors returned by the response.
+// An api.Status object with status != success is considered an "error", 
+// which interrupts the normal response flow.
 func finishRequest(timeout time.Duration, fn resultFunc) (result runtime.Object, err error) {
 	// these channels need to be buffered to prevent the goroutine below from hanging indefinitely
 	// when the select statement reads something other than the one the goroutine sends on.

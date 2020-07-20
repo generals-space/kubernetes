@@ -41,10 +41,10 @@ const (
 )
 
 type APIInstaller struct {
-	group             *APIGroupVersion
+	group *APIGroupVersion
 	// 像 /api, /apis 等这种
 	// Path prefix where API resources are to be registered.
-	prefix            string 
+	prefix            string
 	minRequestTimeout time.Duration
 }
 
@@ -59,7 +59,7 @@ type action struct {
 
 // An interface to see if one storage supports override its default verb for monitoring
 type StorageMetricsOverride interface {
-	// OverrideMetricsVerb gives a storage object an opportunity 
+	// OverrideMetricsVerb gives a storage object an opportunity
 	// to override the verb reported to the metrics endpoint
 	OverrideMetricsVerb(oldVerb string) (newVerb string)
 }
@@ -95,7 +95,7 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, *restful.WebService, []e
 	// 就是一个类似于 RouteGroup 对象, 是一组具有统一前缀的 handler 的组合.
 	ws := a.newWebService()
 
-	// a.group.Storage 是一个 string->Storage 的 map, 
+	// a.group.Storage 是一个 string->Storage 的 map,
 	// 在golang中对map的遍历是乱序的, 这里先把其中的path取出, 放到一个[]中, 然后排序, 再依次将其注册.
 	// Register the paths in a deterministic (sorted) order to get a deterministic swagger spec.
 	paths := make([]string, len(a.group.Storage))
@@ -149,13 +149,13 @@ func getStorageVersionKind(storageVersioner runtime.GroupVersioner, storage rest
 	return gvk, nil
 }
 
-// GetResourceKind returns the external group version kind registered 
-// for the given storage object. 
+// GetResourceKind returns the external group version kind registered
+// for the given storage object.
 // If the storage object is a subresource and has an override supplied for it,
 // it returns the group version kind supplied in the override.
 func GetResourceKind(
-	groupVersion schema.GroupVersion, 
-	storage rest.Storage, 
+	groupVersion schema.GroupVersion,
+	storage rest.Storage,
 	typer runtime.ObjectTyper,
 ) (schema.GroupVersionKind, error) {
 	// Let the storage tell us exactly what GVK it has
@@ -169,7 +169,7 @@ func GetResourceKind(
 		return schema.GroupVersionKind{}, err
 	}
 
-	// a given go type can have multiple potential fully qualified kinds. 
+	// a given go type can have multiple potential fully qualified kinds.
 	// Find the one that corresponds with the group
 	// we're trying to register here
 	fqKindToRegister := schema.GroupVersionKind{}
@@ -354,10 +354,10 @@ func isVowel(c rune) bool {
 // 具体资源storage对象(如 PodStorage.(Lister))
 // caller: APIInstaller.registerResourceHandlers(), 只有 Watch/List/WatchList 有调用.
 func restfulListResource(
-	r rest.Lister, 
-	rw rest.Watcher, 
-	scope handlers.RequestScope, 
-	forceWatch bool, 
+	r rest.Lister,
+	rw rest.Watcher,
+	scope handlers.RequestScope,
+	forceWatch bool,
 	minRequestTimeout time.Duration,
 ) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
@@ -395,8 +395,11 @@ func restfulUpdateResource(r rest.Updater, scope handlers.RequestScope, admit ad
 	}
 }
 
-func restfulPatchResource(r rest.Patcher, scope handlers.RequestScope, admit admission.Interface, supportedTypes []string) restful.RouteFunction {
+func restfulPatchResource(
+	r rest.Patcher, scope handlers.RequestScope, admit admission.Interface, supportedTypes []string,
+) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
+		fmt.Printf("======== get a patch request: %+v\n", req)
 		handlers.PatchResource(r, &scope, admit, supportedTypes)(res.ResponseWriter, req.Request)
 	}
 }
@@ -408,8 +411,8 @@ func restfulGetResource(r rest.Getter, e rest.Exporter, scope handlers.RequestSc
 }
 
 func restfulGetResourceWithOptions(
-	r rest.GetterWithOptions, 
-	scope handlers.RequestScope, 
+	r rest.GetterWithOptions,
+	scope handlers.RequestScope,
 	isSubresource bool,
 ) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
@@ -418,10 +421,10 @@ func restfulGetResourceWithOptions(
 }
 
 func restfulConnectResource(
-	connecter rest.Connecter, 
-	scope handlers.RequestScope, 
-	admit admission.Interface, 
-	restPath string, 
+	connecter rest.Connecter,
+	scope handlers.RequestScope,
+	admit admission.Interface,
+	restPath string,
 	isSubresource bool,
 ) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {

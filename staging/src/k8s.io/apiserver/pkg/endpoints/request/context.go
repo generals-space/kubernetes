@@ -78,6 +78,7 @@ func WithUser(parent context.Context, user user.Info) context.Context {
 	return WithValue(parent, userKey, user)
 }
 
+// UserFrom ctx参数中携带有 Value 信息.
 // UserFrom returns the value of the user key on the ctx
 func UserFrom(ctx context.Context) (user.Info, bool) {
 	user, ok := ctx.Value(userKey).(user.Info)

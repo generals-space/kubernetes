@@ -22,17 +22,17 @@ import (
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 )
 
-// registerResourceHandlers 遍历目标资源(pod, pod/log等)支持的所有操作(get/list等), 
+// registerResourceHandlers 遍历目标资源(pod, pod/log等)支持的所有操作(get/list等),
 // 将不同的操作注册为不同的路由(Create对应Post, Update对应Put等), 并与后端 Storage 的不同方法绑定.
 // 其中不同资源可执行的操作也不相同, 判断逻辑是, 各资源的Storage对象是否实现了 Getter, Lister 的接口,
 // 如果是, 则可以进行 get, list 操作.
-// 路由的 handler 部分在 staging/src/k8s.io/apiserver/pkg/endpoints/handlers/目录下, 
+// 路由的 handler 部分在 staging/src/k8s.io/apiserver/pkg/endpoints/handlers/目录下,
 // 有各种方法对应的源文件.
 // 但最终其实还是各种资源的 Storage 做了类型断言, 即ta们的 Storage 对象实现了 Get(), List() 方法.
 // caller: a.Install()
 func (a *APIInstaller) registerResourceHandlers(
-	path string, 
-	storage rest.Storage, 
+	path string,
+	storage rest.Storage,
 	ws *restful.WebService,
 ) (*metav1.APIResource, error) {
 	admit := a.group.Admit
@@ -89,24 +89,24 @@ func (a *APIInstaller) registerResourceHandlers(
 	// 看当前资源支持哪些操作, Create, Update, Patch, Watch, List 等...
 	// 下面的 creater, lister 都是实现了 create(), list() 方法的对象.
 	// what verbs are supported by the storage, used to know what verbs we support per path
-	creater, isCreater 									:= storage.(rest.Creater)
-	namedCreater, isNamedCreater 						:= storage.(rest.NamedCreater)
-	lister, isLister 									:= storage.(rest.Lister)
-	getter, isGetter 									:= storage.(rest.Getter)
-	getterWithOptions, isGetterWithOptions 				:= storage.(rest.GetterWithOptions)
-	gracefulDeleter, isGracefulDeleter 					:= storage.(rest.GracefulDeleter)
-	collectionDeleter, isCollectionDeleter 				:= storage.(rest.CollectionDeleter)
-	updater, isUpdater 									:= storage.(rest.Updater)
-	patcher, isPatcher 									:= storage.(rest.Patcher)
-	watcher, isWatcher 									:= storage.(rest.Watcher)
+	creater, isCreater := storage.(rest.Creater)
+	namedCreater, isNamedCreater := storage.(rest.NamedCreater)
+	lister, isLister := storage.(rest.Lister)
+	getter, isGetter := storage.(rest.Getter)
+	getterWithOptions, isGetterWithOptions := storage.(rest.GetterWithOptions)
+	gracefulDeleter, isGracefulDeleter := storage.(rest.GracefulDeleter)
+	collectionDeleter, isCollectionDeleter := storage.(rest.CollectionDeleter)
+	updater, isUpdater := storage.(rest.Updater)
+	patcher, isPatcher := storage.(rest.Patcher)
+	watcher, isWatcher := storage.(rest.Watcher)
 	// Connecter 类型对应 exec 这种直接与 kubelet 进行通信的操作
-	connecter, isConnecter 								:= storage.(rest.Connecter)
-	storageMeta, isMetadata 							:= storage.(rest.StorageMetadata)
-	storageVersionProvider, isStorageVersionProvider 	:= storage.(rest.StorageVersionProvider)
+	connecter, isConnecter := storage.(rest.Connecter)
+	storageMeta, isMetadata := storage.(rest.StorageMetadata)
+	storageVersionProvider, isStorageVersionProvider := storage.(rest.StorageVersionProvider)
 	if !isMetadata {
 		storageMeta = defaultStorageMetadata{}
 	}
-	exporter, isExporter 								:= storage.(rest.Exporter)
+	exporter, isExporter := storage.(rest.Exporter)
 	if !isExporter {
 		exporter = nil
 	}
@@ -250,7 +250,7 @@ func (a *APIInstaller) registerResourceHandlers(
 	}
 
 	// watching on lists is allowed only for kinds that support both watch and list.
-	allowWatchList := isWatcher && isLister 
+	allowWatchList := isWatcher && isLister
 	nameParam := ws.PathParameter("name", "name of the "+kind).DataType("string")
 	pathParam := ws.PathParameter("path", "path to the resource").DataType("string")
 
@@ -416,9 +416,9 @@ func (a *APIInstaller) registerResourceHandlers(
 	allMediaTypes := append(mediaTypes, streamMediaTypes...)
 	ws.Produces(allMediaTypes...)
 
-	// kubeVerbs 的键就是 
+	// kubeVerbs 的键就是
 	kubeVerbs := map[string]struct{}{}
-	reqScope := handlers.RequestScope {
+	reqScope := handlers.RequestScope{
 		Serializer:      a.group.Serializer,
 		ParameterCodec:  a.group.ParameterCodec,
 		Creater:         a.group.Creater,
@@ -433,8 +433,8 @@ func (a *APIInstaller) registerResourceHandlers(
 		// TODO: Check for the interface on storage
 		TableConvertor: tableProvider,
 
-		// TODO: This seems wrong for cross-group subresources. 
-		// It makes an assumption that a subresource 
+		// TODO: This seems wrong for cross-group subresources.
+		// It makes an assumption that a subresource
 		// and its parent are in the same group version.
 		// Revisit this.
 		Resource:    a.group.GroupVersion.WithResource(resource),
@@ -442,7 +442,7 @@ func (a *APIInstaller) registerResourceHandlers(
 		Kind:        fqKindToRegister,
 
 		HubGroupVersion: schema.GroupVersion{
-			Group: fqKindToRegister.Group, 
+			Group:   fqKindToRegister.Group,
 			Version: runtime.APIVersionInternal,
 		},
 
@@ -453,7 +453,7 @@ func (a *APIInstaller) registerResourceHandlers(
 	if a.group.MetaGroupVersion != nil {
 		reqScope.MetaGroupVersion = *a.group.MetaGroupVersion
 	}
-	if a.group.OpenAPIModels != nil && 
+	if a.group.OpenAPIModels != nil &&
 		utilfeature.DefaultFeatureGate.Enabled(features.ServerSideApply) {
 		fm, err := fieldmanager.NewFieldManager(
 			a.group.OpenAPIModels,
@@ -500,7 +500,7 @@ func (a *APIInstaller) registerResourceHandlers(
 			return nil, fmt.Errorf("unknown action verb for discovery: %s", action.Verb)
 		}
 
-		// ...每次遍历只能处理一种action, 而 routes 在本轮循环中就会被处理掉, 
+		// ...每次遍历只能处理一种action, 而 routes 在本轮循环中就会被处理掉,
 		// 那为什么要使用列表? 会出现多种情况吗?
 		routes := []*restful.RouteBuilder{}
 
@@ -532,13 +532,13 @@ func (a *APIInstaller) registerResourceHandlers(
 			if needOverride {
 				// need change the reported verb
 				handler = metrics.InstrumentRouteFunc(
-					verbOverrider.OverrideMetricsVerb(action.Verb), 
-					group, version, resource, subresource, requestScope, 
+					verbOverrider.OverrideMetricsVerb(action.Verb),
+					group, version, resource, subresource, requestScope,
 					metrics.APIServerComponent, handler,
 				)
 			} else {
 				handler = metrics.InstrumentRouteFunc(
-					action.Verb, group, version, resource, subresource, 
+					action.Verb, group, version, resource, subresource,
 					requestScope, metrics.APIServerComponent, handler,
 				)
 			}
@@ -572,9 +572,9 @@ func (a *APIInstaller) registerResourceHandlers(
 				doc = "list " + subresource + " of objects of kind " + kind
 			}
 			handler := metrics.InstrumentRouteFunc(
-				action.Verb, group, version, 
-				resource, subresource, requestScope, 
-				metrics.APIServerComponent, 
+				action.Verb, group, version,
+				resource, subresource, requestScope,
+				metrics.APIServerComponent,
 				restfulListResource(lister, watcher, reqScope, false, a.minRequestTimeout),
 			)
 			route := ws.GET(action.Path).To(handler).
@@ -638,7 +638,14 @@ func (a *APIInstaller) registerResourceHandlers(
 			if utilfeature.DefaultFeatureGate.Enabled(features.ServerSideApply) {
 				supportedTypes = append(supportedTypes, string(types.ApplyPatchType))
 			}
-			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, restfulPatchResource(patcher, reqScope, admit, supportedTypes))
+			// 如下 handler 封装了 metrics 监控中间件(或者叫...拦截器?), 实际的 handler 在
+			// staging/src/k8s.io/apiserver/pkg/endpoints/installer.go
+			// 中的 restfulPatchResource() 方法(ta返回的方法).
+			handler := metrics.InstrumentRouteFunc(
+				action.Verb, group, version, resource, subresource,
+				requestScope, metrics.APIServerComponent,
+				restfulPatchResource(patcher, reqScope, admit, supportedTypes),
+			)
 			route := ws.PATCH(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
@@ -740,9 +747,9 @@ func (a *APIInstaller) registerResourceHandlers(
 			}
 			doc += ". deprecated: use the 'watch' parameter with a list operation instead, filtered to a single item with the 'fieldSelector' parameter."
 			handler := metrics.InstrumentRouteFunc(
-				action.Verb, group, version, 
-				resource, subresource, requestScope, 
-				metrics.APIServerComponent, 
+				action.Verb, group, version,
+				resource, subresource, requestScope,
+				metrics.APIServerComponent,
 				restfulListResource(lister, watcher, reqScope, true, a.minRequestTimeout),
 			)
 			route := ws.GET(action.Path).To(handler).
@@ -765,9 +772,9 @@ func (a *APIInstaller) registerResourceHandlers(
 			}
 			doc += ". deprecated: use the 'watch' parameter with a list operation instead."
 			handler := metrics.InstrumentRouteFunc(
-				action.Verb, group, version, 
-				resource, subresource, requestScope, 
-				metrics.APIServerComponent, 
+				action.Verb, group, version,
+				resource, subresource, requestScope,
+				metrics.APIServerComponent,
 				restfulListResource(lister, watcher, reqScope, true, a.minRequestTimeout),
 			)
 			route := ws.GET(action.Path).To(handler).
@@ -851,8 +858,8 @@ func (a *APIInstaller) registerResourceHandlers(
 
 	// Record the existence of the GVR and the corresponding GVK
 	a.group.EquivalentResourceRegistry.RegisterKindFor(
-		reqScope.Resource, 
-		reqScope.Subresource, 
+		reqScope.Resource,
+		reqScope.Subresource,
 		fqKindToRegister,
 	)
 

@@ -56,7 +56,10 @@ const (
 )
 
 // PatchResource returns a function that will handle a resource patch.
-func PatchResource(r rest.Patcher, scope *RequestScope, admit admission.Interface, patchTypes []string) http.HandlerFunc {
+func PatchResource(
+	r rest.Patcher, scope *RequestScope, admit admission.Interface,
+	patchTypes []string,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		// For performance tracking purposes.
 		trace := utiltrace.New("Patch", utiltrace.Field{"url", req.URL.Path})
@@ -102,7 +105,7 @@ func PatchResource(r rest.Patcher, scope *RequestScope, admit admission.Interfac
 			scope.err(err, w, req)
 			return
 		}
-
+		// patchBytes 是真正的内容.
 		patchBytes, err := limitedReadBody(req, scope.MaxRequestBodyBytes)
 		if err != nil {
 			scope.err(err, w, req)
@@ -110,7 +113,10 @@ func PatchResource(r rest.Patcher, scope *RequestScope, admit admission.Interfac
 		}
 
 		options := &metav1.PatchOptions{}
-		if err := metainternalversion.ParameterCodec.DecodeParameters(req.URL.Query(), scope.MetaGroupVersion, options); err != nil {
+		err = metainternalversion.ParameterCodec.DecodeParameters(
+			req.URL.Query(), scope.MetaGroupVersion, options,
+		)
+		if err != nil {
 			err = errors.NewBadRequest(err.Error())
 			scope.err(err, w, req)
 			return
@@ -146,25 +152,18 @@ func PatchResource(r rest.Patcher, scope *RequestScope, admit admission.Interfac
 
 		userInfo, _ := request.UserFrom(ctx)
 		staticCreateAttributes := admission.NewAttributesRecord(
-			nil,
-			nil,
-			scope.Kind,
-			namespace,
-			name,
-			scope.Resource,
-			scope.Subresource,
+			nil, nil,
+			scope.Kind, namespace, name,
+			scope.Resource, scope.Subresource,
 			admission.Create,
 			patchToCreateOptions(options),
 			dryrun.IsDryRun(options.DryRun),
-			userInfo)
+			userInfo,
+		)
 		staticUpdateAttributes := admission.NewAttributesRecord(
-			nil,
-			nil,
-			scope.Kind,
-			namespace,
-			name,
-			scope.Resource,
-			scope.Subresource,
+			nil, nil,
+			scope.Kind, namespace, name,
+			scope.Resource, scope.Subresource,
 			admission.Update,
 			patchToUpdateOptions(options),
 			dryrun.IsDryRun(options.DryRun),
@@ -200,7 +199,11 @@ func PatchResource(r rest.Patcher, scope *RequestScope, admit admission.Interfac
 
 			hubGroupVersion: scope.HubGroupVersion,
 
-			createValidation: withAuthorization(rest.AdmissionToValidateObjectFunc(admit, staticCreateAttributes, scope), scope.Authorizer, createAuthorizerAttributes),
+			createValidation: withAuthorization(
+				rest.AdmissionToValidateObjectFunc(admit, staticCreateAttributes, scope),
+				scope.Authorizer,
+				createAuthorizerAttributes,
+			),
 			updateValidation: rest.AdmissionToValidateObjectUpdateFunc(admit, staticUpdateAttributes, scope),
 			admissionCheck:   mutatingAdmission,
 
@@ -217,8 +220,10 @@ func PatchResource(r rest.Patcher, scope *RequestScope, admit admission.Interfac
 
 			trace: trace,
 		}
-
+		fmt.Printf("============ do patch, the patcher struct: %+v\n", p)
 		result, wasCreated, err := p.patchResource(ctx, scope)
+		fmt.Printf("============ patch result: %+v\n", result)
+		fmt.Printf("============ was created?: %t\n", wasCreated)
 		if err != nil {
 			scope.err(err, w, req)
 			return
@@ -521,16 +526,22 @@ func (p *patcher) applyAdmission(ctx context.Context, patchedObject runtime.Obje
 }
 
 // patchResource divides PatchResource for easier unit testing
-func (p *patcher) patchResource(ctx context.Context, scope *RequestScope) (runtime.Object, bool, error) {
+func (p *patcher) patchResource(
+	ctx context.Context, scope *RequestScope,
+) (runtime.Object, bool, error) {
 	p.namespace = request.NamespaceValue(ctx)
 	switch p.patchType {
 	case types.JSONPatchType, types.MergePatchType:
+		fmt.Printf("======= in patchResource() mechanism: jsonPatcher")
 		p.mechanism = &jsonPatcher{
 			patcher:      p,
 			fieldManager: scope.FieldManager,
 		}
 	case types.StrategicMergePatchType:
-		schemaReferenceObj, err := p.unsafeConvertor.ConvertToVersion(p.restPatcher.New(), p.kind.GroupVersion())
+		fmt.Printf("======= in patchResource() mechanism: smpPatcher")
+		schemaReferenceObj, err := p.unsafeConvertor.ConvertToVersion(
+			p.restPatcher.New(), p.kind.GroupVersion(),
+		)
 		if err != nil {
 			return nil, false, err
 		}
@@ -539,8 +550,10 @@ func (p *patcher) patchResource(ctx context.Context, scope *RequestScope) (runti
 			schemaReferenceObj: schemaReferenceObj,
 			fieldManager:       scope.FieldManager,
 		}
-	// this case is unreachable if ServerSideApply is not enabled because we will have already rejected the content type
+	// this case is unreachable if ServerSideApply is not enabled
+	// because we will have already rejected the content type
 	case types.ApplyPatchType:
+		fmt.Printf("======= in patchResource() mechanism: applyPatcher")
 		p.mechanism = &applyPatcher{
 			fieldManager: scope.FieldManager,
 			patch:        p.patchBytes,
@@ -555,10 +568,15 @@ func (p *patcher) patchResource(ctx context.Context, scope *RequestScope) (runti
 
 	wasCreated := false
 	p.updatedObjectInfo = rest.DefaultUpdatedObjectInfo(nil, p.applyPatch, p.applyAdmission)
+
 	result, err := finishRequest(p.timeout, func() (runtime.Object, error) {
 		// Pass in UpdateOptions to override UpdateStrategy.AllowUpdateOnCreate
 		options := patchToUpdateOptions(p.options)
-		updateObject, created, updateErr := p.restPatcher.Update(ctx, p.name, p.updatedObjectInfo, p.createValidation, p.updateValidation, p.forceAllowCreate, options)
+		updateObject, created, updateErr := p.restPatcher.Update(
+			ctx, p.name, p.updatedObjectInfo,
+			p.createValidation, p.updateValidation,
+			p.forceAllowCreate, options,
+		)
 		wasCreated = created
 		return updateObject, updateErr
 	})

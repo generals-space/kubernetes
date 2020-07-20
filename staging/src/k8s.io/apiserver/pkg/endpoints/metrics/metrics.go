@@ -303,7 +303,10 @@ func MonitorRequest(req *http.Request, verb, group, version, resource, subresour
 
 // InstrumentRouteFunc works like Prometheus' InstrumentHandlerFunc but wraps
 // the go-restful RouteFunction instead of a HandlerFunc plus some Kubernetes endpoint specific information.
-func InstrumentRouteFunc(verb, group, version, resource, subresource, scope, component string, routeFunc restful.RouteFunction) restful.RouteFunction {
+func InstrumentRouteFunc(
+	verb, group, version, resource, subresource, scope, component string, 
+	routeFunc restful.RouteFunction,
+) restful.RouteFunction {
 	return restful.RouteFunction(func(request *restful.Request, response *restful.Response) {
 		now := time.Now()
 
@@ -322,7 +325,11 @@ func InstrumentRouteFunc(verb, group, version, resource, subresource, scope, com
 
 		routeFunc(request, response)
 
-		MonitorRequest(request.Request, verb, group, version, resource, subresource, scope, component, delegate.Header().Get("Content-Type"), delegate.Status(), delegate.ContentLength(), time.Since(now))
+		MonitorRequest(
+			request.Request, verb, group, version, resource, subresource, scope, component, 
+			delegate.Header().Get("Content-Type"), 
+			delegate.Status(), delegate.ContentLength(), time.Since(now),
+		)
 	})
 }
 
