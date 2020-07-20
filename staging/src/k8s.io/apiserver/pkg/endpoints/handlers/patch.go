@@ -275,14 +275,13 @@ func strategicPatchObject(
 		return err
 	}
 
+	// patchMap 只包含在 apply 的 yaml 中定义的字段, 不如 originalObjMap 中的字段全, 没有默认字段.
+	// 比如 schedulerName, startTime 等, 不显式写出就不会出现.
 	patchMap := make(map[string]interface{})
 	if err := json.Unmarshal(patchBytes, &patchMap); err != nil {
 		return errors.NewBadRequest(err.Error())
 	}
-	fmt.Printf("------------- strategicPatchObject()")
-	fmt.Printf("original obj map: %+v\n", originalObjMap)
-	fmt.Printf("patch map: %+v\n", patchMap)
-	
+
 	err = applyPatchToObject(defaulter, originalObjMap, patchMap, objToUpdate, schemaReferenceObj)
 	if err != nil {
 		return err

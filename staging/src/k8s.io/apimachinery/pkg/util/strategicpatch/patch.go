@@ -853,18 +853,28 @@ func handleUnmarshal(j []byte) (map[string]interface{}, error) {
 // must be JSONMap. A patch can be created from an original and modified document by
 // calling CreateTwoWayMergeMapPatch.
 // Warning: the original and patch JSONMap objects are mutated by this function and should not be reused.
-func StrategicMergeMapPatch(original, patch JSONMap, dataStruct interface{}) (JSONMap, error) {
+// @param original: 已经存储在 etcd 中的, 旧版本的, 待更新的目标信息
+// @param patch: 使用 apply 的 yaml 文件的内容, 不过是 json 格式的, 理论上不如 original 全, 因为很多字段不显式指定都省略了.
+// @param dataStruct: 待更新的资源类型, 应该是 runtime.Object{} 类型, 比如 Deployment, Job 等.
+// caller: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go -> applyPatchToObject()
+func StrategicMergeMapPatch(
+	original, patch JSONMap, 
+	dataStruct interface{},
+) (JSONMap, error) {
 	schema, err := NewPatchMetaFromStruct(dataStruct)
 	if err != nil {
 		return nil, err
 	}
 
-	// We need the go struct tags `patchMergeKey` and `patchStrategy` for fields that support a strategic merge patch.
+	// We need the go struct tags `patchMergeKey` and `patchStrategy` for fields 
+	// that support a strategic merge patch.
 	// For native resources, we can easily figure out these tags since we know the fields.
 
-	// Because custom resources are decoded as Unstructured and because we're missing the metadata about how to handle
-	// each field in a strategic merge patch, we can't find the go struct tags. Hence, we can't easily  do a strategic merge
-	// for custom resources. So we should fail fast and return an error.
+	// Because custom resources are decoded as Unstructured 
+	// and because we're missing the metadata about how to handle
+	// each field in a strategic merge patch, we can't find the go struct tags. 
+	// Hence, we can't easily do a strategic merge for custom resources. 
+	// So we should fail fast and return an error.
 	if _, ok := dataStruct.(*unstructured.Unstructured); ok {
 		return nil, mergepatch.ErrUnsupportedStrategicMergePatchFormat
 	}
@@ -872,7 +882,12 @@ func StrategicMergeMapPatch(original, patch JSONMap, dataStruct interface{}) (JS
 	return StrategicMergeMapPatchUsingLookupPatchMeta(original, patch, schema)
 }
 
-func StrategicMergeMapPatchUsingLookupPatchMeta(original, patch JSONMap, schema LookupPatchMeta) (JSONMap, error) {
+// StrategicMergeMapPatchUsingLookupPatchMeta ...
+// caller: StrategicMergeMapPatch(), StrategicMergePatchUsingLookupPatchMeta()
+func StrategicMergeMapPatchUsingLookupPatchMeta(
+	original, patch JSONMap, 
+	schema LookupPatchMeta,
+) (JSONMap, error) {
 	mergeOptions := MergeOptions{
 		MergeParallelList:    true,
 		IgnoreUnmatchedNulls: true,
@@ -1278,7 +1293,11 @@ func partitionMapsByPresentInList(original, partitionBy []interface{}, mergeKey 
 // If patch contains any null field (e.g. field_1: null) that is not
 // present in original, then to propagate it to the end result use
 // mergeOptions.IgnoreUnmatchedNulls == false.
-func mergeMap(original, patch map[string]interface{}, schema LookupPatchMeta, mergeOptions MergeOptions) (map[string]interface{}, error) {
+func mergeMap(
+	original, patch map[string]interface{}, 
+	schema LookupPatchMeta, 
+	mergeOptions MergeOptions,
+) (map[string]interface{}, error) {
 	if v, ok := patch[directiveMarker]; ok {
 		return handleDirectiveInMergeMap(v, patch)
 	}
