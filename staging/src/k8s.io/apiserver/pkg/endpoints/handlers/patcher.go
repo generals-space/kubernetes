@@ -90,8 +90,9 @@ func (p *patcher) applyPatch(
 	} else {
 		objToUpdate, patchErr = p.mechanism.applyPatchToCurrentObject(currentObject)
 	}
+	// 此时经过策略合并, objToUpdate 的内容基本已经确定, 但 ResourceVersion 仍是原本的值.
+	// 之后还有一系列的步骤去变动.
 	fmt.Printf("====== applyPatch 策略合并完成\n")
-	fmt.Printf("====== applyPatch objToUpdate: %+v\n", objToUpdate)
 
 	if patchErr != nil {
 		return nil, patchErr
@@ -144,8 +145,8 @@ func (p *patcher) admissionAttributes(
 // and is given the currently persisted object and the patched object as input.
 // TODO: rename this function because the name implies it is related to applyPatcher
 func (p *patcher) applyAdmission(
-	ctx context.Context, 
-	patchedObject runtime.Object, 
+	ctx context.Context,
+	patchedObject runtime.Object,
 	currentObject runtime.Object,
 ) (runtime.Object, error) {
 	p.trace.Step("About to check admission control")
@@ -163,7 +164,7 @@ func (p *patcher) applyAdmission(
 	}
 	if p.admissionCheck != nil && p.admissionCheck.Handles(operation) {
 		attributes := p.admissionAttributes(ctx, patchedObject, currentObject, operation, options)
-		
+
 		return patchedObject, p.admissionCheck.Admit(ctx, attributes, p.objectInterfaces)
 	}
 	return patchedObject, nil

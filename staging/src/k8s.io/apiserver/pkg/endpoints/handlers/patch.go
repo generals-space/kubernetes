@@ -56,7 +56,7 @@ const (
 // @param r: 这个 rest.Patcher 可以追溯到
 // 	staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
 // registerResourceHandlers() 中的 storage.(rest.Patcher)
-// 
+//
 // caller: staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
 //			registerResourceHandlers() 的restfulPatchResource() 部分,
 //			不是直接调用, 而是在 restfulPatchResource() 中封装了一层 metrics 中间件.
@@ -228,8 +228,7 @@ func PatchResource(
 		}
 		fmt.Printf("============ do patch, the patcher struct: %+v\n", p)
 		result, wasCreated, err := p.patchResource(ctx, scope)
-		fmt.Printf("============ patch result: %+v\n", result)
-		fmt.Printf("============ was created?: %t\n", wasCreated)
+		fmt.Printf("============ patch complete, was created?: %t\n", wasCreated)
 		if err != nil {
 			scope.err(err, w, req)
 			return

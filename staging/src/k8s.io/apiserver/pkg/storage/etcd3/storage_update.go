@@ -33,8 +33,7 @@ func (s *store) GuaranteedUpdate(
 	tryUpdate storage.UpdateFunc,
 	suggestion ...runtime.Object,
 ) error {
-	fmt.Printf("=========== staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go -> GuranteeUpdate()\n")
-	fmt.Printf("====== key: %s\n", key)
+	fmt.Printf("====== store.GuaranteedUpdate key: %s\n", key)
 	trace := utiltrace.New("GuaranteedUpdate etcd3", utiltrace.Field{"type", getTypeName(out)})
 	defer trace.LogIfLong(500 * time.Millisecond)
 
@@ -44,7 +43,7 @@ func (s *store) GuaranteedUpdate(
 	}
 	// 此时的 key 格式为 /registry/jobs/kube-system/myjob
 	key = path.Join(s.pathPrefix, key)
-	fmt.Printf("====== full key: %s\n", key)
+	fmt.Printf("====== store.GuaranteedUpdate full key: %s\n", key)
 
 	getCurrentState := func() (*objState, error) {
 		startTime := time.Now()
@@ -55,7 +54,10 @@ func (s *store) GuaranteedUpdate(
 		}
 		return s.getState(getResp, key, v, ignoreNotFound)
 	}
-
+	// origState 是指目标资源在 etcd 存储的信息, 
+	// origState.meta 中包含 ResourceVersion, 
+	// origState.obj 即是 runtime.Object, 全部信息.
+	// origState.data 是从 etcd 中取出的 raw 信息, 就像使用 etcdctl 得到的结果一样, 有很多乱码.
 	var origState *objState
 	var mustCheckData bool
 	if len(suggestion) == 1 && suggestion[0] != nil {
@@ -70,9 +72,6 @@ func (s *store) GuaranteedUpdate(
 			return err
 		}
 	}
-	fmt.Printf("======== origState: %+v\n", origState)
-	fmt.Printf("======== origState meta: %+v\n", origState.meta)
-	fmt.Printf("======== origState obj: %+v\n", origState.obj)
 	trace.Step("initial value restored")
 
 	transformContext := authenticatedDataString(key)

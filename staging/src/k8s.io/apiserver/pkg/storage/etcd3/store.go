@@ -75,6 +75,7 @@ type store struct {
 
 type objState struct {
 	obj  runtime.Object
+	// meta 主要包含 ResourceVersion 字段信息.
 	meta *storage.ResponseMeta
 	rev  int64
 	// data 是指从 etcd 中取出来的数据, 和 etcdctl 取出来的应该一样, 如果打印的话, 经常有可能出现乱码.
@@ -632,8 +633,8 @@ func (s *store) getStateFromObject(obj runtime.Object) (*objState, error) {
 	return state, nil
 }
 
+// caller: staging/src/k8s.io/apiserver/pkg/storage/etcd3/storage_update.go -> store.GuaranteedUpdate()
 func (s *store) updateState(st *objState, userUpdate storage.UpdateFunc) (runtime.Object, uint64, error) {
-	fmt.Printf("====== staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go -> updateState()\n")
 	ret, ttlPtr, err := userUpdate(st.obj, *st.meta)
 	if err != nil {
 		return nil, 0, err
