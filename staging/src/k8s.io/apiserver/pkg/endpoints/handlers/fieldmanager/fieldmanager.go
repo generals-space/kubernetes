@@ -47,7 +47,13 @@ type FieldManager struct {
 
 // NewFieldManager creates a new FieldManager that merges apply requests
 // and update managed fields for other types of requests.
-func NewFieldManager(models openapiproto.Models, objectConverter runtime.ObjectConvertor, objectDefaulter runtime.ObjectDefaulter, gv schema.GroupVersion, hub schema.GroupVersion) (*FieldManager, error) {
+func NewFieldManager(
+	models openapiproto.Models,
+	objectConverter runtime.ObjectConvertor,
+	objectDefaulter runtime.ObjectDefaulter,
+	gv schema.GroupVersion,
+	hub schema.GroupVersion,
+) (*FieldManager, error) {
 	typeConverter, err := internal.NewTypeConverter(models, false)
 	if err != nil {
 		return nil, err
@@ -88,10 +94,15 @@ func NewCRDFieldManager(models openapiproto.Models, objectConverter runtime.Obje
 	}, nil
 }
 
-// Update is used when the object has already been merged (non-apply
-// use-case), and simply updates the managed fields in the output
-// object.
-func (f *FieldManager) Update(liveObj, newObj runtime.Object, manager string) (runtime.Object, error) {
+// Update is used when the object has already been merged (non-apply use-case),
+// and simply updates the managed fields in the output object.
+// caller: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patcher_smp.go
+// 			applyPatchToCurrentObject()
+// 由于合并策略有3种, 所以调用也可能不只这一处.
+func (f *FieldManager) Update(
+	liveObj, newObj runtime.Object,
+	manager string,
+) (runtime.Object, error) {
 	// If the object doesn't have metadata, we should just return without trying to
 	// set the managedFields at all, so creates/updates/patches will work normally.
 	if _, err := meta.Accessor(newObj); err != nil {
@@ -164,7 +175,7 @@ func (f *FieldManager) Update(liveObj, newObj runtime.Object, manager string) (r
 			managed.Fields[manager] = vs
 		}
 	}
-
+	fmt.Printf("====== field manager update, managed: %+v\n", managed)
 	if err := internal.EncodeObjectManagedFields(newObj, managed); err != nil {
 		return nil, fmt.Errorf("failed to encode managed fields: %v", err)
 	}

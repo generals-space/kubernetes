@@ -61,11 +61,13 @@ func (e *Store) Update(
 	err = e.Storage.GuaranteedUpdate(
 
 		ctx, key, out, true, storagePreconditions,
+
 		// 在主调函数 e.Storage.GuaranteedUpdate() 可能因为 dryRun 为 false 没有执行, 
 		// 但最终在 etcd 操作层面的 staging/src/k8s.io/apiserver/pkg/storage/etcd3/storage_update.go 
 		// GuaranteedUpdate() 方法中, 还是调用了这里的这个函数.
 		func(existing runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
 			// Given the existing object, get the new object
+			// 这里得到的 obj 只是合并后的结果对象, 还没有更新到 etcd.
 			obj, err := objInfo.UpdatedObject(ctx, existing)
 			if err != nil {
 				return nil, nil, err
@@ -126,8 +128,17 @@ func (e *Store) Update(
 					// TODO: The Invalid error should have a field for Resource.
 					// After that field is added, we should fill the Resource and
 					// leave the Kind field empty. See the discussion in #18526.
-					qualifiedKind := schema.GroupKind{Group: qualifiedResource.Group, Kind: qualifiedResource.Resource}
-					fieldErrList := field.ErrorList{field.Invalid(field.NewPath("metadata").Child("resourceVersion"), resourceVersion, "must be specified for an update")}
+					qualifiedKind := schema.GroupKind{
+						Group: qualifiedResource.Group, 
+						Kind: qualifiedResource.Resource,
+					}
+					fieldErrList := field.ErrorList{
+						field.Invalid(
+							field.NewPath("metadata").Child("resourceVersion"), 
+							resourceVersion, 
+							"must be specified for an update",
+						),
+					}
 					return nil, nil, kubeerr.NewInvalid(qualifiedKind, name, fieldErrList)
 				}
 				if resourceVersion != version {

@@ -26,7 +26,7 @@ import (
 
 // DryRunnableStorage 这应该是一个封装过的 Cacher 对象, 而不是直接 etcd storage 对象.
 type DryRunnableStorage struct {
-	// 这应该是一个 cacher 对象, ta也实现了 storage.Interface接口, 在 
+	// 这应该是一个 cacher 对象, ta也实现了 storage.Interface接口, 在
 	// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go
 	// 中通过 CompleteWithOptions() 方法被赋值.
 	Storage storage.Interface
@@ -38,11 +38,11 @@ func (s *DryRunnableStorage) Versioner() storage.Versioner {
 }
 
 func (s *DryRunnableStorage) Create(
-	ctx context.Context, 
-	key string, 
-	obj, 
-	out runtime.Object, 
-	ttl uint64, 
+	ctx context.Context,
+	key string,
+	obj,
+	out runtime.Object,
+	ttl uint64,
 	dryRun bool,
 ) error {
 	if dryRun {
@@ -88,14 +88,17 @@ func (s *DryRunnableStorage) List(ctx context.Context, key string, resourceVersi
 	return s.Storage.List(ctx, key, resourceVersion, p, listObj)
 }
 
+// GuaranteedUpdate ...
+// caller: staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store_update.go
+//			Store.Update()
 func (s *DryRunnableStorage) GuaranteedUpdate(
-	ctx context.Context, 
-	key string, 
-	ptrToType runtime.Object, 
+	ctx context.Context,
+	key string,
+	ptrToType runtime.Object,
 	ignoreNotFound bool,
-	preconditions *storage.Preconditions, 
-	tryUpdate storage.UpdateFunc, 
-	dryRun bool, 
+	preconditions *storage.Preconditions,
+	tryUpdate storage.UpdateFunc,
+	dryRun bool,
 	suggestion ...runtime.Object,
 ) error {
 	if dryRun {

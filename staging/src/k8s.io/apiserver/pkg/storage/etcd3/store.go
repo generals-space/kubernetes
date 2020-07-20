@@ -74,9 +74,9 @@ type store struct {
 }
 
 type objState struct {
-	obj   runtime.Object
-	meta  *storage.ResponseMeta
-	rev   int64
+	obj  runtime.Object
+	meta *storage.ResponseMeta
+	rev  int64
 	// data 是指从 etcd 中取出来的数据, 和 etcdctl 取出来的应该一样, 如果打印的话, 经常有可能出现乱码.
 	data  []byte
 	stale bool
@@ -633,7 +633,7 @@ func (s *store) getStateFromObject(obj runtime.Object) (*objState, error) {
 }
 
 func (s *store) updateState(st *objState, userUpdate storage.UpdateFunc) (runtime.Object, uint64, error) {
-	fmt.Printf("====== staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go -> updateState()")
+	fmt.Printf("====== staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go -> updateState()\n")
 	ret, ttlPtr, err := userUpdate(st.obj, *st.meta)
 	if err != nil {
 		return nil, 0, err
@@ -664,7 +664,13 @@ func (s *store) ttlOpts(ctx context.Context, ttl int64) ([]clientv3.OpOption, er
 
 // decode decodes value of bytes into object. It will also set the object resource version to rev.
 // On success, objPtr would be set to the object.
-func decode(codec runtime.Codec, versioner storage.Versioner, value []byte, objPtr runtime.Object, rev int64) error {
+func decode(
+	codec runtime.Codec, 
+	versioner storage.Versioner, 
+	value []byte, 
+	objPtr runtime.Object, 
+	rev int64,
+) error {
 	if _, err := conversion.EnforcePtr(objPtr); err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
 	}

@@ -20,6 +20,10 @@ import (
 // GuaranteedUpdate implements storage.Interface.GuaranteedUpdate.
 // @param preconditions: 由 staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store_update.go
 //                       中的 Update() 方法构造并传入.
+// @param tryUpdate: 在 staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store_update.go
+//					中的 Store.Update() 方法中的 GuaranteedUpdate() 部分内嵌.
+// caller: staging/src/k8s.io/apiserver/pkg/registry/generic/registry/dryrun.go
+// 			DryRunnableStorage.GuaranteedUpdate()
 func (s *store) GuaranteedUpdate(
 	ctx context.Context,
 	key string,
@@ -89,7 +93,8 @@ func (s *store) GuaranteedUpdate(
 			// Retry
 			continue
 		}
-
+		// 在下面的函数过程中, 经过了策略合并, 无目标资源时自动创建, 以及各种验证, 返回了 ret 的结果,
+		// 但此时还没有更新到 etcd 中, 要在下面使用 clientv3 使用 Put 操作完成.
 		ret, ttl, err := s.updateState(origState, tryUpdate)
 
 		if err != nil {
@@ -170,7 +175,7 @@ func (s *store) GuaranteedUpdate(
 			continue
 		}
 		putResp := txnResp.Responses[0].GetResponsePut()
-
+		// 成功后返回并打印结果.
 		return decode(s.codec, s.versioner, data, out, putResp.Header.Revision)
 	}
 }
