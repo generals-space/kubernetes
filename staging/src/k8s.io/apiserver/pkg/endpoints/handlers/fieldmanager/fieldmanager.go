@@ -104,76 +104,103 @@ func (f *FieldManager) Update(
 	manager string,
 ) (runtime.Object, error) {
 	fmt.Printf("====== field manager update\n")
-
+	fmt.Println("--------------------- step 1")
 	// If the object doesn't have metadata, we should just return without trying to
 	// set the managedFields at all, so creates/updates/patches will work normally.
 	if _, err := meta.Accessor(newObj); err != nil {
+		fmt.Println("--------------------- step 1.1")
 		return newObj, nil
 	}
+	fmt.Println("--------------------- step 2")
 
 	// First try to decode the managed fields provided in the update,
 	// This is necessary to allow directly updating managed fields.
 	managed, err := internal.DecodeObjectManagedFields(newObj)
 
+	fmt.Println("--------------------- step 3")
 	// If the managed field is empty or we failed to decode it,
 	// let's try the live object. This is to prevent clients who
 	// don't understand managedFields from deleting it accidentally.
 	if err != nil || len(managed.Fields) == 0 {
+		fmt.Println("--------------------- step 3.1")
 		managed, err = internal.DecodeObjectManagedFields(liveObj)
 		if err != nil {
+			fmt.Println("--------------------- step 3.2")
 			return nil, fmt.Errorf("failed to decode managed fields: %v", err)
 		}
 	}
+	fmt.Println("--------------------- step 4")
+
 	// if managed field is still empty, skip updating managed fields altogether
 	if len(managed.Fields) == 0 {
+		fmt.Println("--------------------- step 4.1")
 		return newObj, nil
 	}
+	fmt.Println("--------------------- step 5")
 	newObjVersioned, err := f.toVersioned(newObj)
+	fmt.Println("--------------------- step 6")
 	if err != nil {
+		fmt.Println("--------------------- step 6.1")
 		return nil, fmt.Errorf("failed to convert new object to proper version: %v", err)
 	}
+	fmt.Println("--------------------- step 7")
 	liveObjVersioned, err := f.toVersioned(liveObj)
 	if err != nil {
+		fmt.Println("--------------------- step 7.1")
 		return nil, fmt.Errorf("failed to convert live object to proper version: %v", err)
 	}
+	fmt.Println("--------------------- step 8")
 	internal.RemoveObjectManagedFields(liveObjVersioned)
 	internal.RemoveObjectManagedFields(newObjVersioned)
+	fmt.Println("--------------------- step 9")
 	newObjTyped, err := f.typeConverter.ObjectToTyped(newObjVersioned)
 	if err != nil {
+		fmt.Println("--------------------- step 9.1")
 		// Return newObj and just by-pass fields update. This really shouldn't happen.
 		klog.Errorf("[SHOULD NOT HAPPEN] failed to create typed new object: %v", err)
 		return newObj, nil
 	}
+	fmt.Println("--------------------- step 10")
 	liveObjTyped, err := f.typeConverter.ObjectToTyped(liveObjVersioned)
 	if err != nil {
+		fmt.Println("--------------------- step 10.1")
 		// Return newObj and just by-pass fields update. This really shouldn't happen.
 		klog.Errorf("[SHOULD NOT HAPPEN] failed to create typed live object: %v", err)
 		return newObj, nil
 	}
 	apiVersion := fieldpath.APIVersion(f.groupVersion.String())
 
+	fmt.Println("--------------------- step 11")
 	// TODO(apelisse) use the first return value when unions are implemented
 	_, managed.Fields, err = f.updater.Update(liveObjTyped, newObjTyped, apiVersion, managed.Fields, manager)
 	if err != nil {
+		fmt.Println("--------------------- step 11.1")
 		return nil, fmt.Errorf("failed to update ManagedFields: %v", err)
 	}
 	managed.Fields = f.stripFields(managed.Fields, manager)
 
+	fmt.Println("--------------------- step 12")
 	// If the current operation took any fields from anything, it means the object changed,
 	// so update the timestamp of the managedFieldsEntry and merge with any previous updates from the same manager
 	if vs, ok := managed.Fields[manager]; ok {
+		fmt.Println("--------------------- step 12.1")
 		delete(managed.Fields, manager)
 
 		// Build a manager identifier which will only match previous updates from the same manager
 		manager, err = f.buildManagerInfo(manager, metav1.ManagedFieldsOperationUpdate)
+		fmt.Println("--------------------- step 12.2")
 		if err != nil {
+			fmt.Println("--------------------- step 12.3")
 			return nil, fmt.Errorf("failed to build manager identifier: %v", err)
 		}
 
+		fmt.Println("--------------------- step 12.4")
 		managed.Times[manager] = &metav1.Time{Time: time.Now().UTC()}
 		if previous, ok := managed.Fields[manager]; ok {
+			fmt.Println("--------------------- step 12.5")
 			managed.Fields[manager] = fieldpath.NewVersionedSet(vs.Set().Union(previous.Set()), vs.APIVersion(), vs.Applied())
 		} else {
+			fmt.Println("--------------------- step 12.6")
 			managed.Fields[manager] = vs
 		}
 	}
