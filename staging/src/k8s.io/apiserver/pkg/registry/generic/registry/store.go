@@ -190,7 +190,7 @@ type Store struct {
 	// Storage.Storage 会使用 Decorator() 进行初始化, 初始化的操作在
 	// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/storage_factory.go
 	// 中的 StorageWithCacher() 函数.
-	// Storage is the interface for the underlying storage for the resource. 
+	// Storage is the interface for the underlying storage for the resource.
 	// It is wrapped into a "DryRunnableStorage" that will
 	// either pass-through or simply dry-run.
 	Storage DryRunnableStorage
@@ -460,21 +460,22 @@ func (e *Store) deleteWithoutFinalizers(ctx context.Context, name, key string, o
 	return obj, false, err
 }
 
-// Update performs an atomic update and set of the object. 
-// Returns the result of the update or an error. 
-// If the registry allows create-on-update, 
+// Update performs an atomic update and set of the object.
+// Returns the result of the update or an error.
+// If the registry allows create-on-update,
 // the create flow will be executed.
 // A bool is returned along with the object and any errors,
 // to indicate object creation.
 func (e *Store) Update(
-	ctx context.Context, 
-	name string, 
-	objInfo rest.UpdatedObjectInfo, 
-	createValidation rest.ValidateObjectFunc, 
-	updateValidation rest.ValidateObjectUpdateFunc, 
-	forceAllowCreate bool, 
+	ctx context.Context,
+	name string,
+	objInfo rest.UpdatedObjectInfo,
+	createValidation rest.ValidateObjectFunc,
+	updateValidation rest.ValidateObjectUpdateFunc,
+	forceAllowCreate bool,
 	options *metav1.UpdateOptions,
 ) (runtime.Object, bool, error) {
+	fmt.Printf("===================== staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go -> Update()\n")
 	key, err := e.KeyFunc(ctx, name)
 	if err != nil {
 		return nil, false, err
@@ -496,7 +497,7 @@ func (e *Store) Update(
 	// deleteObj is only used in case a deletion is carried out
 	var deleteObj runtime.Object
 	err = e.Storage.GuaranteedUpdate(
-		ctx, key, out, true, storagePreconditions, 
+		ctx, key, out, true, storagePreconditions,
 		func(existing runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
 			// Given the existing object, get the new object
 			obj, err := objInfo.UpdatedObject(ctx, existing)
@@ -527,8 +528,8 @@ func (e *Store) Update(
 				if err := rest.BeforeCreate(e.CreateStrategy, ctx, obj); err != nil {
 					return nil, nil, err
 				}
-				// at this point we have a fully formed object. 
-				// It is time to call the validators that 
+				// at this point we have a fully formed object.
+				// It is time to call the validators that
 				// the apiserver handling chain wants to enforce.
 				if createValidation != nil {
 					if err := createValidation(ctx, obj.DeepCopyObject()); err != nil {
@@ -591,7 +592,7 @@ func (e *Store) Update(
 				return obj, &ttl, nil
 			}
 			return obj, nil, nil
-		}, 
+		},
 		dryrun.IsDryRun(options.DryRun),
 	)
 
@@ -599,7 +600,7 @@ func (e *Store) Update(
 		// delete the object
 		if err == errEmptiedFinalizers {
 			return e.deleteWithoutFinalizers(
-				ctx, name, key, deleteObj, 
+				ctx, name, key, deleteObj,
 				storagePreconditions,
 				dryrun.IsDryRun(options.DryRun),
 			)
@@ -1139,8 +1140,8 @@ func (e *Store) Watch(ctx context.Context, options *metainternalversion.ListOpti
 
 // WatchPredicate starts a watch for the items that matches.
 func (e *Store) WatchPredicate(
-	ctx context.Context, 
-	p storage.SelectionPredicate, 
+	ctx context.Context,
+	p storage.SelectionPredicate,
 	resourceVersion string,
 ) (watch.Interface, error) {
 	if name, ok := p.MatchesSingle(); ok {
@@ -1237,20 +1238,20 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 	}
 	if e.NewFunc == nil {
 		return fmt.Errorf(
-			"store for %s must have NewFunc set", 
+			"store for %s must have NewFunc set",
 			e.DefaultQualifiedResource.String(),
 		)
 	}
 	if e.NewListFunc == nil {
 		return fmt.Errorf(
-			"store for %s must have NewListFunc set", 
+			"store for %s must have NewListFunc set",
 			e.DefaultQualifiedResource.String(),
 		)
 	}
 	// 这里只是判断了两者一个有值一个没有的情况, 如果都没有, 下面还会有代码补充.
 	if (e.KeyRootFunc == nil) != (e.KeyFunc == nil) {
 		return fmt.Errorf(
-			"store for %s must set both KeyRootFunc and KeyFunc or neither", 
+			"store for %s must set both KeyRootFunc and KeyFunc or neither",
 			e.DefaultQualifiedResource.String(),
 		)
 	}
@@ -1263,21 +1264,21 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 		isNamespaced = e.UpdateStrategy.NamespaceScoped()
 	default:
 		return fmt.Errorf(
-			"store for %s must have CreateStrategy or UpdateStrategy set", 
+			"store for %s must have CreateStrategy or UpdateStrategy set",
 			e.DefaultQualifiedResource.String(),
 		)
 	}
 
 	if e.DeleteStrategy == nil {
 		return fmt.Errorf(
-			"store for %s must have DeleteStrategy set", 
+			"store for %s must have DeleteStrategy set",
 			e.DefaultQualifiedResource.String(),
 		)
 	}
 
 	if options.RESTOptions == nil {
 		return fmt.Errorf(
-			"options for %s must have RESTOptions set", 
+			"options for %s must have RESTOptions set",
 			e.DefaultQualifiedResource.String(),
 		)
 	}
@@ -1312,8 +1313,8 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 	}
 	if prefix == "/" {
 		return fmt.Errorf(
-			"store for %s has an invalid prefix %q", 
-			e.DefaultQualifiedResource.String(), 
+			"store for %s has an invalid prefix %q",
+			e.DefaultQualifiedResource.String(),
 			opts.ResourcePrefix,
 		)
 	}
@@ -1347,8 +1348,8 @@ func (e *Store) CompleteWithOptions(options *generic.StoreOptions) error {
 
 		if isNamespaced {
 			return e.KeyFunc(
-				genericapirequest.WithNamespace(genericapirequest.NewContext(), 
-				accessor.GetNamespace()), 
+				genericapirequest.WithNamespace(genericapirequest.NewContext(),
+					accessor.GetNamespace()),
 				accessor.GetName(),
 			)
 		}

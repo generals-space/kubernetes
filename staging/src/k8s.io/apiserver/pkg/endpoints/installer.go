@@ -399,8 +399,6 @@ func restfulPatchResource(
 	r rest.Patcher, scope handlers.RequestScope, admit admission.Interface, supportedTypes []string,
 ) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
-		fmt.Printf("======== get a patch request: %+v\n", req)
-		fmt.Printf("======== patch request.Request: %+v\n", req.Request)
 		handlers.PatchResource(r, &scope, admit, supportedTypes)(res.ResponseWriter, req.Request)
 	}
 }
