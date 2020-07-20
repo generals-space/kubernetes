@@ -94,6 +94,7 @@ func NewCRDFieldManager(models openapiproto.Models, objectConverter runtime.Obje
 	}, nil
 }
 
+// Update 这个方法貌似什么都没做, 在很前面的地方就结束了...
 // Update is used when the object has already been merged (non-apply use-case),
 // and simply updates the managed fields in the output object.
 // caller: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patcher_smp.go
@@ -103,33 +104,29 @@ func (f *FieldManager) Update(
 	liveObj, newObj runtime.Object,
 	manager string,
 ) (runtime.Object, error) {
-	fmt.Printf("====== field manager update\n")
 	// If the object doesn't have metadata, we should just return without trying to
 	// set the managedFields at all, so creates/updates/patches will work normally.
 	if _, err := meta.Accessor(newObj); err != nil {
 		return newObj, nil
 	}
-	
+
 	// First try to decode the managed fields provided in the update,
 	// This is necessary to allow directly updating managed fields.
 	managed, err := internal.DecodeObjectManagedFields(newObj)
-	
+
 	// If the managed field is empty or we failed to decode it,
 	// let's try the live object. This is to prevent clients who
 	// don't understand managedFields from deleting it accidentally.
 	if err != nil || len(managed.Fields) == 0 {
-		fmt.Println("--------------------- step 3.1")
 		managed, err = internal.DecodeObjectManagedFields(liveObj)
 		if err != nil {
-			fmt.Println("--------------------- step 3.2")
 			return nil, fmt.Errorf("failed to decode managed fields: %v", err)
 		}
 	}
-	fmt.Println("--------------------- step 4")
-	
+
 	// if managed field is still empty, skip updating managed fields altogether
 	if len(managed.Fields) == 0 {
-		fmt.Println("--------------------- step 4.1")
+		// 一般来说到这里就结束了...
 		return newObj, nil
 	}
 	newObjVersioned, err := f.toVersioned(newObj)
@@ -181,7 +178,6 @@ func (f *FieldManager) Update(
 			managed.Fields[manager] = vs
 		}
 	}
-	fmt.Printf("====== field manager update, managed: %+v\n", managed)
 	if err := internal.EncodeObjectManagedFields(newObj, managed); err != nil {
 		return nil, fmt.Errorf("failed to encode managed fields: %v", err)
 	}

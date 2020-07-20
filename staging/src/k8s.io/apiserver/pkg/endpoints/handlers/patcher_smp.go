@@ -17,8 +17,10 @@ type smpPatcher struct {
 }
 
 // caller: p.applyPatch()
-func (p *smpPatcher) applyPatchToCurrentObject(currentObject runtime.Object) (runtime.Object, error) {
-	// Since the patch is applied on versioned objects, 
+func (p *smpPatcher) applyPatchToCurrentObject(
+	currentObject runtime.Object,
+) (runtime.Object, error) {
+	// Since the patch is applied on versioned objects,
 	// we need to convert the current object to versioned representation first.
 	currentVersionedObject, err := p.unsafeConvertor.ConvertToVersion(
 		currentObject, p.kind.GroupVersion(),
@@ -31,10 +33,10 @@ func (p *smpPatcher) applyPatchToCurrentObject(currentObject runtime.Object) (ru
 		return nil, err
 	}
 	err = strategicPatchObject(
-		p.defaulter, 
-		currentVersionedObject, 
-		p.patchBytes, 
-		versionedObjToUpdate, 
+		p.defaulter,
+		currentVersionedObject,
+		p.patchBytes,
+		versionedObjToUpdate,
 		p.schemaReferenceObj,
 	)
 	if err != nil {
@@ -45,14 +47,14 @@ func (p *smpPatcher) applyPatchToCurrentObject(currentObject runtime.Object) (ru
 	if err != nil {
 		return nil, err
 	}
-	// p.fieldManager 的实现代码在 
+	// p.fieldManager 的实现代码在
 	// staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/fieldmanager.go
-	// 在 vendor/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go 
+	// 在 vendor/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
 	// 的 registerResourceHandlers() 的 PATCH 操作中被初始化.
 	if p.fieldManager != nil {
 		newObj, err = p.fieldManager.Update(
-			currentObject, 
-			newObj, 
+			currentObject,
+			newObj,
 			managerOrUserAgent(p.options.FieldManager, p.userAgent),
 		)
 		if err != nil {

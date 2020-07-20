@@ -51,9 +51,6 @@ func DecodeObjectManagedFields(from runtime.Object) (Managed, error) {
 		return Managed{}, nil
 	}
 	accessor, err := meta.Accessor(from)
-	fmt.Printf("00000000000000 new obj: %+v\n", from)
-	fmt.Printf("00000000000000 accessor: %+v\n", accessor)
-	fmt.Printf("00000000000000 manage fields: %+v\n", accessor.GetManagedFields())
 	if err != nil {
 		panic(fmt.Sprintf("couldn't get accessor: %v", err))
 	}

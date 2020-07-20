@@ -279,6 +279,10 @@ func strategicPatchObject(
 	if err := json.Unmarshal(patchBytes, &patchMap); err != nil {
 		return errors.NewBadRequest(err.Error())
 	}
+	fmt.Printf("------------- strategicPatchObject()")
+	fmt.Printf("original obj map: %+v\n", originalObjMap)
+	fmt.Printf("patch map: %+v\n", patchMap)
+	
 	err = applyPatchToObject(defaulter, originalObjMap, patchMap, objToUpdate, schemaReferenceObj)
 	if err != nil {
 		return err
@@ -289,6 +293,7 @@ func strategicPatchObject(
 // applyPatchToObject applies a strategic merge patch of <patchMap> to
 // <originalMap> and stores the result in <objToUpdate>.
 // NOTE: <objToUpdate> must be a versioned object.
+// caller: strategicPatchObject() 只有这一处
 func applyPatchToObject(
 	defaulter runtime.ObjectDefaulter,
 	originalMap map[string]interface{},
@@ -296,13 +301,17 @@ func applyPatchToObject(
 	objToUpdate runtime.Object,
 	schemaReferenceObj runtime.Object,
 ) error {
-	patchedObjMap, err := strategicpatch.StrategicMergeMapPatch(originalMap, patchMap, schemaReferenceObj)
+	patchedObjMap, err := strategicpatch.StrategicMergeMapPatch(
+		originalMap, patchMap, schemaReferenceObj,
+	)
 	if err != nil {
 		return interpretStrategicMergePatchError(err)
 	}
 
-	// Rather than serialize the patched map to JSON, then decode it to an object, we go directly from a map to an object
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(patchedObjMap, objToUpdate); err != nil {
+	// Rather than serialize the patched map to JSON, then decode it to an object,
+	// we go directly from a map to an object
+	err = runtime.DefaultUnstructuredConverter.FromUnstructured(patchedObjMap, objToUpdate)
+	if err != nil {
 		return errors.NewInvalid(schema.GroupKind{}, "", field.ErrorList{
 			field.Invalid(field.NewPath("patch"), fmt.Sprintf("%+v", patchMap), err.Error()),
 		})
