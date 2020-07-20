@@ -102,7 +102,7 @@ type LegacyRESTStorage struct {
 // NewLegacyRESTStorage 为Legacy时期的资源对象创建各自的 storage, 返回值中的 APIGroupInfo, 
 // 最重要的就是ta其中的`VersionedResourcesStorageMap["v1"]`, v1之下是一个string->storage对象的map, 
 // 包括各种最核心的资源映射(pod, node, service等).
-// 对比来看, 返回值LegacyRESTStorage倒不那么重要, 下面就放了3个成员对象: Service的ClusterIP的Allocator和NodePort的Allocator.
+// 对比来看, 返回值 LegacyRESTStorage 倒不那么重要, 下面就放了3个成员对象: Service的ClusterIP的Allocator和NodePort的Allocator.
 // 
 // 要加载什么资源是写死在这个函数中的, 而不是传入什么[pod, node, event]列表, for
 // 另外, 虽然storage的创建有NewREST和NewStorage两种, 但是你会发现REST对象只是把Storage包装了一下而已.

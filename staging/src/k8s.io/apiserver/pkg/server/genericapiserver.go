@@ -421,8 +421,7 @@ func (s *GenericAPIServer) installAPIResources(
 	apiGroupInfo *APIGroupInfo, 
 	openAPIModels openapiproto.Models,
 ) error {
-	// group version: v1, vetav1...那种吧
-	// 
+	// groupVersion: v1, betav1...那种吧
 	for _, groupVersion := range apiGroupInfo.PrioritizedVersions {
 		if len(apiGroupInfo.VersionedResourcesStorageMap[groupVersion.Version]) == 0 {
 			klog.Warningf("Skipping API %v because it has no resources.", groupVersion)
@@ -451,7 +450,10 @@ func (s *GenericAPIServer) installAPIResources(
 // caller: pkg/master/master.go -> Master.InstallLegacyAPI()
 func (s *GenericAPIServer) InstallLegacyAPIGroup(apiPrefix string, apiGroupInfo *APIGroupInfo) error {
 	if !s.legacyAPIGroupPrefixes.Has(apiPrefix) {
-		return fmt.Errorf("%q is not in the allowed legacy API prefixes: %v", apiPrefix, s.legacyAPIGroupPrefixes.List())
+		return fmt.Errorf(
+			"%q is not in the allowed legacy API prefixes: %v", 
+			apiPrefix, s.legacyAPIGroupPrefixes.List(),
+		)
 	}
 
 	openAPIModels, err := s.getOpenAPIModels(apiPrefix, apiGroupInfo)
@@ -532,7 +534,13 @@ func (s *GenericAPIServer) InstallAPIGroup(apiGroupInfo *APIGroupInfo) error {
 	return s.InstallAPIGroups(apiGroupInfo)
 }
 
-func (s *GenericAPIServer) getAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupVersion schema.GroupVersion, apiPrefix string) *genericapi.APIGroupVersion {
+// caller: s.installAPIResources()
+// groupVersion: 应该是 v1, betav1 那种吧.
+func (s *GenericAPIServer) getAPIGroupVersion(
+	apiGroupInfo *APIGroupInfo, 
+	groupVersion schema.GroupVersion, 
+	apiPrefix string,
+) *genericapi.APIGroupVersion {
 	storage := make(map[string]rest.Storage)
 	for k, v := range apiGroupInfo.VersionedResourcesStorageMap[groupVersion.Version] {
 		storage[strings.ToLower(k)] = v
@@ -543,7 +551,10 @@ func (s *GenericAPIServer) getAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupV
 	return version
 }
 
-func (s *GenericAPIServer) newAPIGroupVersion(apiGroupInfo *APIGroupInfo, groupVersion schema.GroupVersion) *genericapi.APIGroupVersion {
+func (s *GenericAPIServer) newAPIGroupVersion(
+	apiGroupInfo *APIGroupInfo, 
+	groupVersion schema.GroupVersion,
+) *genericapi.APIGroupVersion {
 	return &genericapi.APIGroupVersion{
 		GroupVersion:     groupVersion,
 		MetaGroupVersion: apiGroupInfo.MetaGroupVersion,

@@ -56,6 +56,9 @@ const (
 )
 
 // PatchResource returns a function that will handle a resource patch.
+// @param r: 这个 rest.Patcher 可以追溯到 
+// staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
+// registerResourceHandlers() 中的 storage.(rest.Patcher)
 func PatchResource(
 	r rest.Patcher, scope *RequestScope, admit admission.Interface,
 	patchTypes []string,
@@ -278,6 +281,9 @@ type patcher struct {
 	options *metav1.PatchOptions
 
 	// Operation information
+	// 被赋值的 restPatcher 可以追溯到 
+	// staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
+	// 中的 storage.(rest.Patcher)
 	restPatcher rest.Patcher
 	name        string
 	patchType   types.PatchType
@@ -532,13 +538,13 @@ func (p *patcher) patchResource(
 	p.namespace = request.NamespaceValue(ctx)
 	switch p.patchType {
 	case types.JSONPatchType, types.MergePatchType:
-		fmt.Printf("======= in patchResource() mechanism: jsonPatcher")
+		fmt.Printf("======= in patchResource() mechanism: jsonPatcher\n")
 		p.mechanism = &jsonPatcher{
 			patcher:      p,
 			fieldManager: scope.FieldManager,
 		}
 	case types.StrategicMergePatchType:
-		fmt.Printf("======= in patchResource() mechanism: smpPatcher")
+		fmt.Printf("======= in patchResource() mechanism: smpPatcher\n")
 		schemaReferenceObj, err := p.unsafeConvertor.ConvertToVersion(
 			p.restPatcher.New(), p.kind.GroupVersion(),
 		)
@@ -553,7 +559,7 @@ func (p *patcher) patchResource(
 	// this case is unreachable if ServerSideApply is not enabled
 	// because we will have already rejected the content type
 	case types.ApplyPatchType:
-		fmt.Printf("======= in patchResource() mechanism: applyPatcher")
+		fmt.Printf("======= in patchResource() mechanism: applyPatcher\n")
 		p.mechanism = &applyPatcher{
 			fieldManager: scope.FieldManager,
 			patch:        p.patchBytes,

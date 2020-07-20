@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -67,7 +68,9 @@ func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
 		UpdateStrategy: job.Strategy,
 		DeleteStrategy: job.Strategy,
 
-		TableConvertor: printerstorage.TableConvertor{TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers)},
+		TableConvertor: printerstorage.TableConvertor{
+			TableGenerator: printers.NewTableGenerator().With(printersinternal.AddHandlers),
+		},
 	}
 	options := &generic.StoreOptions{RESTOptions: optsGetter, AttrFunc: job.GetAttrs}
 	if err := store.CompleteWithOptions(options); err != nil {
@@ -83,7 +86,8 @@ func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, error) {
 // Implement CategoriesProvider
 var _ rest.CategoriesProvider = &REST{}
 
-// Categories implements the CategoriesProvider interface. Returns a list of categories a resource is part of.
+// Categories implements the CategoriesProvider interface.
+// Returns a list of categories a resource is part of.
 func (r *REST) Categories() []string {
 	return []string{"all"}
 }
@@ -104,7 +108,16 @@ func (r *StatusREST) Get(ctx context.Context, name string, options *metav1.GetOp
 }
 
 // Update alters the status subset of an object.
-func (r *StatusREST) Update(ctx context.Context, name string, objInfo rest.UpdatedObjectInfo, createValidation rest.ValidateObjectFunc, updateValidation rest.ValidateObjectUpdateFunc, forceAllowCreate bool, options *metav1.UpdateOptions) (runtime.Object, bool, error) {
+func (r *StatusREST) Update(
+	ctx context.Context,
+	name string,
+	objInfo rest.UpdatedObjectInfo,
+	createValidation rest.ValidateObjectFunc,
+	updateValidation rest.ValidateObjectUpdateFunc,
+	forceAllowCreate bool,
+	options *metav1.UpdateOptions,
+) (runtime.Object, bool, error) {
+	fmt.Printf("============ pkg/registry/batch/job/storage/storage.go -> StatusREST.Update()")
 	// We are explicitly setting forceAllowCreate to false in the call to the underlying storage because
 	// subresources should never allow create on update.
 	return r.store.Update(ctx, name, objInfo, createValidation, updateValidation, false, options)

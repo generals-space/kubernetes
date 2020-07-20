@@ -445,7 +445,8 @@ func (m *Master) InstallLegacyAPI(
 	m.GenericAPIServer.AddPostStartHookOrDie(controllerName, bootstrapController.PostStartHook)
 	m.GenericAPIServer.AddPreShutdownHookOrDie(controllerName, bootstrapController.PreShutdownHook)
 
-	if err := m.GenericAPIServer.InstallLegacyAPIGroup(genericapiserver.DefaultLegacyAPIPrefix, &apiGroupInfo); err != nil {
+	err = m.GenericAPIServer.InstallLegacyAPIGroup(genericapiserver.DefaultLegacyAPIPrefix, &apiGroupInfo)
+	if err != nil {
 		return fmt.Errorf("Error in registering group versions: %v", err)
 	}
 	return nil
@@ -454,10 +455,12 @@ func (m *Master) InstallLegacyAPI(
 func (m *Master) installTunneler(nodeTunneler tunneler.Tunneler, nodeClient corev1client.NodeInterface) {
 	nodeTunneler.Run(nodeAddressProvider{nodeClient}.externalAddresses)
 	m.GenericAPIServer.AddHealthChecks(healthz.NamedCheck("SSH Tunnel Check", tunneler.TunnelSyncHealthChecker(nodeTunneler)))
+
 	prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "apiserver_proxy_tunnel_sync_duration_seconds",
 		Help: "The time since the last successful synchronization of the SSH tunnels for proxy requests.",
 	}, func() float64 { return float64(nodeTunneler.SecondsSinceSync()) })
+
 	prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "apiserver_proxy_tunnel_sync_latency_secs",
 		Help: "(Deprecated) The time since the last successful synchronization of the SSH tunnels for proxy requests.",

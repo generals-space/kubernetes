@@ -29,7 +29,7 @@ import (
 // 路由的 handler 部分在 staging/src/k8s.io/apiserver/pkg/endpoints/handlers/目录下,
 // 有各种方法对应的源文件.
 // 但最终其实还是各种资源的 Storage 做了类型断言, 即ta们的 Storage 对象实现了 Get(), List() 方法.
-// caller: a.Install()
+// caller: staging/src/k8s.io/apiserver/pkg/endpoints/installer.go -> a.Install()
 func (a *APIInstaller) registerResourceHandlers(
 	path string,
 	storage rest.Storage,
