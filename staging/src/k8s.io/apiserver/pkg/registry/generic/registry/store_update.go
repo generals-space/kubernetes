@@ -21,7 +21,10 @@ import (
 // the create flow will be executed.
 // A bool is returned along with the object and any errors,
 // to indicate object creation.
-// @param: name 待更新的资源名称
+// @param name: 待更新的资源名称
+// @param objInfo: 这是一个接口类型, 代码实现在 staging/src/k8s.io/apiserver/pkg/registry/rest/update.go
+//                 中的 defaultUpdatedObjectInfo{} 结构体.
+// caller: staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go -> patcher.patchResource()
 func (e *Store) Update(
 	ctx context.Context,
 	name string,

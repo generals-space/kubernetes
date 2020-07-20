@@ -77,6 +77,7 @@ type objState struct {
 	obj   runtime.Object
 	meta  *storage.ResponseMeta
 	rev   int64
+	// data 是指从 etcd 中取出来的数据, 和 etcdctl 取出来的应该一样, 如果打印的话, 经常有可能出现乱码.
 	data  []byte
 	stale bool
 }

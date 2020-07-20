@@ -56,11 +56,13 @@ const (
 )
 
 // PatchResource returns a function that will handle a resource patch.
-// @param r: 这个 rest.Patcher 可以追溯到 
-// staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
+// @param r: 这个 rest.Patcher 可以追溯到
+// 	staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
 // registerResourceHandlers() 中的 storage.(rest.Patcher)
 func PatchResource(
-	r rest.Patcher, scope *RequestScope, admit admission.Interface,
+	r rest.Patcher,
+	scope *RequestScope,
+	admit admission.Interface,
 	patchTypes []string,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -281,7 +283,7 @@ type patcher struct {
 	options *metav1.PatchOptions
 
 	// Operation information
-	// 被赋值的 restPatcher 可以追溯到 
+	// 被赋值的 restPatcher 可以追溯到
 	// staging/src/k8s.io/apiserver/pkg/endpoints/installer_registerResourceHandlers.go
 	// 中的 storage.(rest.Patcher)
 	restPatcher rest.Patcher
@@ -300,6 +302,7 @@ type patcher struct {
 }
 
 type patchMechanism interface {
+	// 最终由 applyPatch() 方法调用.
 	applyPatchToCurrentObject(currentObject runtime.Object) (runtime.Object, error)
 	createNewObject() (runtime.Object, error)
 }
@@ -310,6 +313,7 @@ type jsonPatcher struct {
 	fieldManager *fieldmanager.FieldManager
 }
 
+// caller: p.applyPatch()
 func (p *jsonPatcher) applyPatchToCurrentObject(currentObject runtime.Object) (runtime.Object, error) {
 	// Encode will convert & return a versioned object in JSON.
 	currentObjJS, err := runtime.Encode(p.codec, currentObject)
@@ -378,6 +382,7 @@ type smpPatcher struct {
 	fieldManager       *fieldmanager.FieldManager
 }
 
+// caller: p.applyPatch()
 func (p *smpPatcher) applyPatchToCurrentObject(currentObject runtime.Object) (runtime.Object, error) {
 	// Since the patch is applied on versioned objects, we need to convert the
 	// current object to versioned representation first.
@@ -418,6 +423,7 @@ type applyPatcher struct {
 	fieldManager *fieldmanager.FieldManager
 }
 
+// caller: p.applyPatch()
 func (p *applyPatcher) applyPatchToCurrentObject(obj runtime.Object) (runtime.Object, error) {
 	force := false
 	if p.options.Force != nil {
@@ -442,6 +448,7 @@ func (p *applyPatcher) createNewObject() (runtime.Object, error) {
 // It additionally returns the map[string]interface{} representation of the
 // <originalObject> and <patchBytes>.
 // NOTE: Both <originalObject> and <objToUpdate> are supposed to be versioned.
+// caller: applyPatchToCurrentObject() 只有这一处
 func strategicPatchObject(
 	defaulter runtime.ObjectDefaulter,
 	originalObject runtime.Object,
@@ -458,17 +465,25 @@ func strategicPatchObject(
 	if err := json.Unmarshal(patchBytes, &patchMap); err != nil {
 		return errors.NewBadRequest(err.Error())
 	}
-
-	if err := applyPatchToObject(defaulter, originalObjMap, patchMap, objToUpdate, schemaReferenceObj); err != nil {
+	err = applyPatchToObject(defaulter, originalObjMap, patchMap, objToUpdate, schemaReferenceObj)
+	if err != nil {
 		return err
 	}
 	return nil
 }
 
+// applyPatch 按照指定的 patch 策略, 得到最终要更新的合并数据.
 // applyPatch is called every time GuaranteedUpdate asks for the updated object,
 // and is given the currently persisted object as input.
 // TODO: rename this function because the name implies it is related to applyPatcher
-func (p *patcher) applyPatch(_ context.Context, _, currentObject runtime.Object) (objToUpdate runtime.Object, patchErr error) {
+// @param _: 这个其实是 new object, 就是要更新的目标.
+// @param currentObject: 就是 old object, 当前 etcd 中存储的旧数据.
+func (p *patcher) applyPatch(
+	_ context.Context,
+	_,
+	currentObject runtime.Object,
+) (objToUpdate runtime.Object, patchErr error) {
+	fmt.Printf("====== applyPatch 应用合并策略\n")
 	// Make sure we actually have a persisted currentObject
 	p.trace.Step("About to apply patch")
 	currentObjectHasUID, err := hasUID(currentObject)
@@ -479,6 +494,8 @@ func (p *patcher) applyPatch(_ context.Context, _, currentObject runtime.Object)
 	} else {
 		objToUpdate, patchErr = p.mechanism.applyPatchToCurrentObject(currentObject)
 	}
+	fmt.Printf("====== applyPatch 策略合并完成\n")
+	fmt.Printf("====== applyPatch objToUpdate: %+v\n", objToUpdate)
 
 	if patchErr != nil {
 		return nil, patchErr
@@ -493,18 +510,38 @@ func (p *patcher) applyPatch(_ context.Context, _, currentObject runtime.Object)
 		if err != nil {
 			return nil, err
 		}
-		return nil, errors.NewConflict(p.resource.GroupResource(), p.name, fmt.Errorf("uid mismatch: the provided object specified uid %s, and no existing object was found", accessor.GetUID()))
+		return nil, errors.NewConflict(
+			p.resource.GroupResource(),
+			p.name,
+			fmt.Errorf(
+				"uid mismatch: the provided object specified uid %s, and no existing object was found",
+				accessor.GetUID(),
+			),
+		)
 	}
-
-	if err := checkName(objToUpdate, p.name, p.namespace, p.namer); err != nil {
+	err = checkName(objToUpdate, p.name, p.namespace, p.namer)
+	if err != nil {
 		return nil, err
 	}
 	return objToUpdate, nil
 }
 
-func (p *patcher) admissionAttributes(ctx context.Context, updatedObject runtime.Object, currentObject runtime.Object, operation admission.Operation, operationOptions runtime.Object) admission.Attributes {
+func (p *patcher) admissionAttributes(
+	ctx context.Context,
+	updatedObject runtime.Object,
+	currentObject runtime.Object,
+	operation admission.Operation,
+	operationOptions runtime.Object,
+) admission.Attributes {
 	userInfo, _ := request.UserFrom(ctx)
-	return admission.NewAttributesRecord(updatedObject, currentObject, p.kind, p.namespace, p.name, p.resource, p.subresource, operation, operationOptions, p.dryRun, userInfo)
+	return admission.NewAttributesRecord(
+		updatedObject,
+		currentObject,
+		p.kind, p.namespace, p.name,
+		p.resource, p.subresource,
+		operation, operationOptions,
+		p.dryRun, userInfo,
+	)
 }
 
 // applyAdmission is called every time GuaranteedUpdate asks for the updated object,
@@ -532,6 +569,7 @@ func (p *patcher) applyAdmission(ctx context.Context, patchedObject runtime.Obje
 }
 
 // patchResource divides PatchResource for easier unit testing
+// caller: PatchResource()
 func (p *patcher) patchResource(
 	ctx context.Context, scope *RequestScope,
 ) (runtime.Object, bool, error) {
@@ -573,15 +611,23 @@ func (p *patcher) patchResource(
 	}
 
 	wasCreated := false
+	// 在更新时, 会对 updatedObjectInfo 依次执行 applyPatch, applyAdmission 两个函数, 都在当前文件中定义.
 	p.updatedObjectInfo = rest.DefaultUpdatedObjectInfo(nil, p.applyPatch, p.applyAdmission)
 
 	result, err := finishRequest(p.timeout, func() (runtime.Object, error) {
 		// Pass in UpdateOptions to override UpdateStrategy.AllowUpdateOnCreate
 		options := patchToUpdateOptions(p.options)
+		// 这里调用的 Update() 最终实现在
+		// staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store_update.go
+		// 中的 Update() 方法.
 		updateObject, created, updateErr := p.restPatcher.Update(
-			ctx, p.name, p.updatedObjectInfo,
-			p.createValidation, p.updateValidation,
-			p.forceAllowCreate, options,
+			ctx,
+			p.name,
+			p.updatedObjectInfo,
+			p.createValidation,
+			p.updateValidation,
+			p.forceAllowCreate,
+			options,
 		)
 		wasCreated = created
 		return updateObject, updateErr
