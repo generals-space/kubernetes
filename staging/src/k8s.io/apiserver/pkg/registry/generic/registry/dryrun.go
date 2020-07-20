@@ -89,8 +89,15 @@ func (s *DryRunnableStorage) List(ctx context.Context, key string, resourceVersi
 }
 
 func (s *DryRunnableStorage) GuaranteedUpdate(
-	ctx context.Context, key string, ptrToType runtime.Object, ignoreNotFound bool,
-	preconditions *storage.Preconditions, tryUpdate storage.UpdateFunc, dryRun bool, suggestion ...runtime.Object) error {
+	ctx context.Context, 
+	key string, 
+	ptrToType runtime.Object, 
+	ignoreNotFound bool,
+	preconditions *storage.Preconditions, 
+	tryUpdate storage.UpdateFunc, 
+	dryRun bool, 
+	suggestion ...runtime.Object,
+) error {
 	if dryRun {
 		err := s.Storage.Get(ctx, key, "", ptrToType, ignoreNotFound)
 		if err != nil {

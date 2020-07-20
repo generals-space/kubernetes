@@ -117,7 +117,6 @@ func (r *StatusREST) Update(
 	forceAllowCreate bool,
 	options *metav1.UpdateOptions,
 ) (runtime.Object, bool, error) {
-	fmt.Printf("============ pkg/registry/batch/job/storage/storage.go -> StatusREST.Update()")
 	// We are explicitly setting forceAllowCreate to false in the call to the underlying storage because
 	// subresources should never allow create on update.
 	return r.store.Update(ctx, name, objInfo, createValidation, updateValidation, false, options)
