@@ -34,18 +34,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
-	"k8s.io/apimachinery/pkg/util/mergepatch"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog"
-	oapi "k8s.io/kube-openapi/pkg/util/proto"
 	"k8s.io/kubectl/pkg/cmd/delete"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/scheme"
@@ -340,8 +335,6 @@ func (o *ApplyOptions) Run() error {
 		OpenAPIGetter: o.DiscoveryClient,
 	}
 
-	fmt.Printf("========================= step 1")
-	fmt.Printf("======== builder: %+v\n", o.Builder)
 	// include the uninitialized objects by default if --prune is true
 	// unless explicitly set --include-uninitialized=false
 	r := o.Builder.
@@ -356,8 +349,6 @@ func (o *ApplyOptions) Run() error {
 	if err := r.Err(); err != nil {
 		return err
 	}
-	fmt.Printf("========================= step 2")
-	fmt.Printf("======== result: %+v\n", r)
 
 	var err error
 	if o.Prune {
@@ -521,7 +512,7 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 			// 创建完成, 打印回显.
 			return printer.PrintObj(info.Object, o.Out)
 		}
-
+		// 如果能够成功获取到, 则为更新操作. 需要借助 Patcher{} 结构
 		metadata, err := meta.Accessor(info.Object)
 		if err != nil {
 			return err
@@ -533,7 +524,7 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 			if _, ok := annotationMap[corev1.LastAppliedConfigAnnotation]; !ok {
 				fmt.Fprintf(o.ErrOut, warningNoLastAppliedConfigAnnotation, o.cmdBaseName)
 			}
-
+			// 这里的 helper 就是之后在 Patcher{} 结构中真正向 apiserver 发起请求的客户端.
 			helper := resource.NewHelper(info.Client, info.Mapping)
 			patcher := &Patcher{
 				Mapping:       info.Mapping,
@@ -550,13 +541,18 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 				Retries:       maxPatchRetry,
 			}
 
-			patchBytes, patchedObject, err := patcher.Patch(info.Object, modified, info.Source, info.Namespace, info.Name, o.ErrOut)
+			patchBytes, patchedObject, err := patcher.Patch(
+				info.Object, modified, info.Source, info.Namespace, info.Name, o.ErrOut,
+			)
 			if err != nil {
-				return cmdutil.AddSourceToErr(fmt.Sprintf("applying patch:\n%s\nto:\n%v\nfor:", patchBytes, info), info.Source, err)
+				return cmdutil.AddSourceToErr(
+					fmt.Sprintf("applying patch:\n%s\nto:\n%v\nfor:", patchBytes, info),
+					info.Source, err,
+				)
 			}
 
 			info.Refresh(patchedObject, true)
-
+			// 如果什么都没有改变
 			if string(patchBytes) == "{}" && !printObject {
 				count++
 
@@ -573,13 +569,14 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 			objs = append(objs, info.Object)
 			return nil
 		}
-
+		// 更新(patch)成功, 打印回显.
 		printer, err := o.ToPrinter("configured")
 		if err != nil {
 			return err
 		}
 		return printer.PrintObj(info.Object, o.Out)
-	})
+	}) // r.Visit() end...
+	
 	if err != nil {
 		return err
 	}
@@ -792,34 +789,6 @@ func runDelete(namespace, name string, mapping *meta.RESTMapping, c dynamic.Inte
 	return c.Resource(mapping.Resource).Namespace(namespace).Delete(name, options)
 }
 
-func (p *Patcher) delete(namespace, name string) error {
-	return runDelete(namespace, name, p.Mapping, p.DynamicClient, p.Cascade, p.GracePeriod, p.ServerDryRun)
-}
-
-// Patcher defines options to patch OpenAPI objects.
-type Patcher struct {
-	Mapping       *meta.RESTMapping
-	Helper        *resource.Helper
-	DynamicClient dynamic.Interface
-
-	Overwrite bool
-	BackOff   clockwork.Clock
-
-	Force        bool
-	Cascade      bool
-	Timeout      time.Duration
-	GracePeriod  int
-	ServerDryRun bool
-
-	// If set, forces the patch against a specific resourceVersion
-	ResourceVersion *string
-
-	// Number of retries to make if the patch fails with conflict
-	Retries int
-
-	OpenapiSchema openapi.Resources
-}
-
 // DryRunVerifier verifies if a given group-version-kind supports DryRun
 // against the current server. Sending dryRun requests to apiserver that
 // don't support it will result in objects being unwillingly persisted.
@@ -873,150 +842,4 @@ func addResourceVersion(patch []byte, rv string) ([]byte, error) {
 	a.SetResourceVersion(rv)
 
 	return json.Marshal(patchMap)
-}
-
-func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, namespace, name string, errOut io.Writer) ([]byte, runtime.Object, error) {
-	// Serialize the current configuration of the object from the server.
-	current, err := runtime.Encode(unstructured.UnstructuredJSONScheme, obj)
-	if err != nil {
-		return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf("serializing current configuration from:\n%v\nfor:", obj), source, err)
-	}
-
-	// Retrieve the original configuration of the object from the annotation.
-	original, err := util.GetOriginalConfiguration(obj)
-	if err != nil {
-		return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf("retrieving original configuration from:\n%v\nfor:", obj), source, err)
-	}
-
-	var patchType types.PatchType
-	var patch []byte
-	var lookupPatchMeta strategicpatch.LookupPatchMeta
-	var schema oapi.Schema
-	createPatchErrFormat := "creating patch with:\noriginal:\n%s\nmodified:\n%s\ncurrent:\n%s\nfor:"
-
-	// Create the versioned struct from the type defined in the restmapping
-	// (which is the API version we'll be submitting the patch to)
-	versionedObject, err := scheme.Scheme.New(p.Mapping.GroupVersionKind)
-	switch {
-	case runtime.IsNotRegisteredError(err):
-		// fall back to generic JSON merge patch
-		patchType = types.MergePatchType
-		preconditions := []mergepatch.PreconditionFunc{mergepatch.RequireKeyUnchanged("apiVersion"),
-			mergepatch.RequireKeyUnchanged("kind"), mergepatch.RequireMetadataKeyUnchanged("name")}
-		patch, err = jsonmergepatch.CreateThreeWayJSONMergePatch(original, modified, current, preconditions...)
-		if err != nil {
-			if mergepatch.IsPreconditionFailed(err) {
-				return nil, nil, fmt.Errorf("%s", "At least one of apiVersion, kind and name was changed")
-			}
-			return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf(createPatchErrFormat, original, modified, current), source, err)
-		}
-	case err != nil:
-		return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf("getting instance of versioned object for %v:", p.Mapping.GroupVersionKind), source, err)
-	case err == nil:
-		// Compute a three way strategic merge patch to send to server.
-		patchType = types.StrategicMergePatchType
-
-		// Try to use openapi first if the openapi spec is available and can successfully calculate the patch.
-		// Otherwise, fall back to baked-in types.
-		if p.OpenapiSchema != nil {
-			if schema = p.OpenapiSchema.LookupResource(p.Mapping.GroupVersionKind); schema != nil {
-				lookupPatchMeta = strategicpatch.PatchMetaFromOpenAPI{Schema: schema}
-				if openapiPatch, err := strategicpatch.CreateThreeWayMergePatch(original, modified, current, lookupPatchMeta, p.Overwrite); err != nil {
-					fmt.Fprintf(errOut, "warning: error calculating patch from openapi spec: %v\n", err)
-				} else {
-					patchType = types.StrategicMergePatchType
-					patch = openapiPatch
-				}
-			}
-		}
-
-		if patch == nil {
-			lookupPatchMeta, err = strategicpatch.NewPatchMetaFromStruct(versionedObject)
-			if err != nil {
-				return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf(createPatchErrFormat, original, modified, current), source, err)
-			}
-			patch, err = strategicpatch.CreateThreeWayMergePatch(original, modified, current, lookupPatchMeta, p.Overwrite)
-			if err != nil {
-				return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf(createPatchErrFormat, original, modified, current), source, err)
-			}
-		}
-	}
-
-	if string(patch) == "{}" {
-		return patch, obj, nil
-	}
-
-	if p.ResourceVersion != nil {
-		patch, err = addResourceVersion(patch, *p.ResourceVersion)
-		if err != nil {
-			return nil, nil, cmdutil.AddSourceToErr("Failed to insert resourceVersion in patch", source, err)
-		}
-	}
-
-	options := metav1.PatchOptions{}
-	if p.ServerDryRun {
-		options.DryRun = []string{metav1.DryRunAll}
-	}
-
-	patchedObj, err := p.Helper.Patch(namespace, name, patchType, patch, &options)
-	return patch, patchedObj, err
-}
-
-// Patch tries to patch an OpenAPI resource. On success, returns the merge patch as well
-// the final patched object. On failure, returns an error.
-func (p *Patcher) Patch(current runtime.Object, modified []byte, source, namespace, name string, errOut io.Writer) ([]byte, runtime.Object, error) {
-	var getErr error
-	patchBytes, patchObject, err := p.patchSimple(current, modified, source, namespace, name, errOut)
-	if p.Retries == 0 {
-		p.Retries = maxPatchRetry
-	}
-	for i := 1; i <= p.Retries && errors.IsConflict(err); i++ {
-		if i > triesBeforeBackOff {
-			p.BackOff.Sleep(backOffPeriod)
-		}
-		current, getErr = p.Helper.Get(namespace, name, false)
-		if getErr != nil {
-			return nil, nil, getErr
-		}
-		patchBytes, patchObject, err = p.patchSimple(current, modified, source, namespace, name, errOut)
-	}
-	if err != nil && (errors.IsConflict(err) || errors.IsInvalid(err)) && p.Force {
-		patchBytes, patchObject, err = p.deleteAndCreate(current, modified, namespace, name)
-	}
-	return patchBytes, patchObject, err
-}
-
-func (p *Patcher) deleteAndCreate(original runtime.Object, modified []byte, namespace, name string) ([]byte, runtime.Object, error) {
-	if err := p.delete(namespace, name); err != nil {
-		return modified, nil, err
-	}
-	// TODO: use wait
-	if err := wait.PollImmediate(1*time.Second, p.Timeout, func() (bool, error) {
-		if _, err := p.Helper.Get(namespace, name, false); !errors.IsNotFound(err) {
-			return false, err
-		}
-		return true, nil
-	}); err != nil {
-		return modified, nil, err
-	}
-	versionedObject, _, err := unstructured.UnstructuredJSONScheme.Decode(modified, nil, nil)
-	if err != nil {
-		return modified, nil, err
-	}
-	options := metav1.CreateOptions{}
-	if p.ServerDryRun {
-		options.DryRun = []string{metav1.DryRunAll}
-	}
-	createdObject, err := p.Helper.Create(namespace, true, versionedObject, &options)
-	if err != nil {
-		// restore the original object if we fail to create the new one
-		// but still propagate and advertise error to user
-		recreated, recreateErr := p.Helper.Create(namespace, true, original, &options)
-		if recreateErr != nil {
-			err = fmt.Errorf("An error occurred force-replacing the existing object with the newly provided one:\n\n%v.\n\nAdditionally, an error occurred attempting to restore the original object:\n\n%v", err, recreateErr)
-		} else {
-			createdObject = recreated
-		}
-	}
-	return modified, createdObject, err
 }
