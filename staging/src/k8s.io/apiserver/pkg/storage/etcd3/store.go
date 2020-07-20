@@ -565,9 +565,9 @@ func (s *store) watch(ctx context.Context, key string, rv string, pred storage.S
 }
 
 func (s *store) getState(
-	getResp *clientv3.GetResponse, 
-	key string, 
-	v reflect.Value, 
+	getResp *clientv3.GetResponse,
+	key string,
+	v reflect.Value,
 	ignoreNotFound bool,
 ) (*objState, error) {
 	state := &objState{
@@ -632,6 +632,7 @@ func (s *store) getStateFromObject(obj runtime.Object) (*objState, error) {
 }
 
 func (s *store) updateState(st *objState, userUpdate storage.UpdateFunc) (runtime.Object, uint64, error) {
+	fmt.Printf("====== staging/src/k8s.io/apiserver/pkg/storage/etcd3/store.go -> updateState()")
 	ret, ttlPtr, err := userUpdate(st.obj, *st.meta)
 	if err != nil {
 		return nil, 0, err

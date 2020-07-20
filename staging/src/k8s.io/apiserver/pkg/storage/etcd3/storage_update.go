@@ -67,6 +67,9 @@ func (s *store) GuaranteedUpdate(
 		}
 	}
 	fmt.Printf("======== origState: %+v\n", origState)
+	fmt.Printf("======== origState meta: %+v\n", origState.meta)
+	fmt.Printf("======== origState obj: %+v\n", origState.obj)
+	fmt.Printf("======== origState data: %s\n", string(origState.data))
 	trace.Step("initial value restored")
 
 	transformContext := authenticatedDataString(key)
@@ -89,6 +92,7 @@ func (s *store) GuaranteedUpdate(
 		}
 
 		ret, ttl, err := s.updateState(origState, tryUpdate)
+		
 		if err != nil {
 			// If our data is already up to date, return the error
 			if !mustCheckData {

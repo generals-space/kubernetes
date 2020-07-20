@@ -58,9 +58,10 @@ func (e *Store) Update(
 	err = e.Storage.GuaranteedUpdate(
 
 		ctx, key, out, true, storagePreconditions,
-
+		// 在主调函数 e.Storage.GuaranteedUpdate() 可能因为 dryRun 为 false 没有执行, 
+		// 但最终在 etcd 操作层面的 staging/src/k8s.io/apiserver/pkg/storage/etcd3/storage_update.go 
+		// GuaranteedUpdate() 方法中, 还是调用了这里的这个函数.
 		func(existing runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
-			fmt.Printf("========== only if dry run is true could run here")
 			// Given the existing object, get the new object
 			obj, err := objInfo.UpdatedObject(ctx, existing)
 			if err != nil {
@@ -133,8 +134,8 @@ func (e *Store) Update(
 			if err := rest.BeforeUpdate(e.UpdateStrategy, ctx, obj, existing); err != nil {
 				return nil, nil, err
 			}
-			// at this point we have a fully formed object.  It is time to call the validators that the apiserver
-			// handling chain wants to enforce.
+			// at this point we have a fully formed object. 
+			// It is time to call the validators that the apiserver handling chain wants to enforce.
 			if updateValidation != nil {
 				if err := updateValidation(ctx, obj.DeepCopyObject(), existing.DeepCopyObject()); err != nil {
 					return nil, nil, err
