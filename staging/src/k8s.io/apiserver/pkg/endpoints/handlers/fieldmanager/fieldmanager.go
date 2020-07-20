@@ -103,6 +103,8 @@ func (f *FieldManager) Update(
 	liveObj, newObj runtime.Object,
 	manager string,
 ) (runtime.Object, error) {
+	fmt.Printf("====== field manager update\n")
+
 	// If the object doesn't have metadata, we should just return without trying to
 	// set the managedFields at all, so creates/updates/patches will work normally.
 	if _, err := meta.Accessor(newObj); err != nil {
