@@ -564,7 +564,12 @@ func (s *store) watch(ctx context.Context, key string, rv string, pred storage.S
 	return s.watcher.Watch(ctx, key, int64(rev), recursive, pred)
 }
 
-func (s *store) getState(getResp *clientv3.GetResponse, key string, v reflect.Value, ignoreNotFound bool) (*objState, error) {
+func (s *store) getState(
+	getResp *clientv3.GetResponse, 
+	key string, 
+	v reflect.Value, 
+	ignoreNotFound bool,
+) (*objState, error) {
 	state := &objState{
 		meta: &storage.ResponseMeta{},
 	}

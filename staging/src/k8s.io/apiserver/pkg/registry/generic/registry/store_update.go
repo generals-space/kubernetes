@@ -21,6 +21,7 @@ import (
 // the create flow will be executed.
 // A bool is returned along with the object and any errors,
 // to indicate object creation.
+// @param: name 待更新的资源名称
 func (e *Store) Update(
 	ctx context.Context,
 	name string,
@@ -32,6 +33,7 @@ func (e *Store) Update(
 ) (runtime.Object, bool, error) {
 	fmt.Printf("===================== final update()\n")
 	fmt.Printf("====== name: %s\n", name)
+	// 此时的 key 为 /jobs/kube-system/myjob 这种, /资源类型/ns名称/资源名称.
 	key, err := e.KeyFunc(ctx, name)
 	fmt.Printf("====== key: %s\n", key)
 	if err != nil {
@@ -58,7 +60,7 @@ func (e *Store) Update(
 		ctx, key, out, true, storagePreconditions,
 
 		func(existing runtime.Object, res storage.ResponseMeta) (runtime.Object, *uint64, error) {
-
+			fmt.Printf("========== only if dry run is true could run here")
 			// Given the existing object, get the new object
 			obj, err := objInfo.UpdatedObject(ctx, existing)
 			if err != nil {

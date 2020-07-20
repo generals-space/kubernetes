@@ -18,6 +18,8 @@ import (
 )
 
 // GuaranteedUpdate implements storage.Interface.GuaranteedUpdate.
+// @param preconditions: 由 staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store_update.go
+//                       中的 Update() 方法构造并传入.
 func (s *store) GuaranteedUpdate(
 	ctx context.Context,
 	key string,
@@ -36,6 +38,7 @@ func (s *store) GuaranteedUpdate(
 	if err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
 	}
+	// 此时的 key 格式为 /registry/jobs/kube-system/myjob
 	key = path.Join(s.pathPrefix, key)
 	fmt.Printf("====== full key: %s\n", key)
 
@@ -63,6 +66,7 @@ func (s *store) GuaranteedUpdate(
 			return err
 		}
 	}
+	fmt.Printf("======== origState: %+v\n", origState)
 	trace.Step("initial value restored")
 
 	transformContext := authenticatedDataString(key)
