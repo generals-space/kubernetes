@@ -290,6 +290,7 @@ func (c *Configurator) Create() (*Config, error) {
 }
 
 // CreateFromProvider creates a scheduler from the name of a registered algorithm provider.
+// caller: pkg/scheduler/scheduler.go -> New() 
 func (c *Configurator) CreateFromProvider(providerName string) (*Config, error) {
 	klog.V(2).Infof("Creating scheduler from algorithm provider '%v'", providerName)
 	provider, err := GetAlgorithmProvider(providerName)

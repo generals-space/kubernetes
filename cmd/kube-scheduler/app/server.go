@@ -156,8 +156,13 @@ func runCommand(cmd *cobra.Command, args []string, opts *options.Options, regist
 	return Run(cc, stopCh, registryOptions...)
 }
 
-// Run executes the scheduler based on the given configuration. It only return on error or when stopCh is closed.
-func Run(cc schedulerserverconfig.CompletedConfig, stopCh <-chan struct{}, registryOptions ...Option) error {
+// Run executes the scheduler based on the given configuration.
+// It only return on error or when stopCh is closed.
+func Run(
+	cc schedulerserverconfig.CompletedConfig, 
+	stopCh <-chan struct{}, 
+	registryOptions ...Option,
+) error {
 	// To help debugging, immediately log version
 	klog.V(1).Infof("Starting Kubernetes Scheduler version %+v", version.Get())
 
@@ -169,7 +174,8 @@ func Run(cc schedulerserverconfig.CompletedConfig, stopCh <-chan struct{}, regis
 	}
 
 	// Create the scheduler.
-	sched, err := scheduler.New(cc.Client,
+	sched, err := scheduler.New(
+		cc.Client,
 		cc.InformerFactory.Core().V1().Nodes(),
 		cc.PodInformer,
 		cc.InformerFactory.Core().V1().PersistentVolumes(),
@@ -191,7 +197,8 @@ func Run(cc schedulerserverconfig.CompletedConfig, stopCh <-chan struct{}, regis
 		scheduler.WithHardPodAffinitySymmetricWeight(cc.ComponentConfig.HardPodAffinitySymmetricWeight),
 		scheduler.WithPreemptionDisabled(cc.ComponentConfig.DisablePreemption),
 		scheduler.WithPercentageOfNodesToScore(cc.ComponentConfig.PercentageOfNodesToScore),
-		scheduler.WithBindTimeoutSeconds(*cc.ComponentConfig.BindTimeoutSeconds))
+		scheduler.WithBindTimeoutSeconds(*cc.ComponentConfig.BindTimeoutSeconds),
+	)
 	if err != nil {
 		return err
 	}
@@ -224,7 +231,11 @@ func Run(cc schedulerserverconfig.CompletedConfig, stopCh <-chan struct{}, regis
 		}
 	}
 	if cc.SecureServing != nil {
-		handler := buildHandlerChain(newHealthzHandler(&cc.ComponentConfig, false, checks...), cc.Authentication.Authenticator, cc.Authorization.Authorizer)
+		handler := buildHandlerChain(
+			newHealthzHandler(&cc.ComponentConfig, false, checks...), 
+			cc.Authentication.Authenticator, 
+			cc.Authorization.Authorizer,
+		)
 		// TODO: handle stoppedCh returned by c.SecureServing.Serve
 		if _, err := cc.SecureServing.Serve(handler, 0, stopCh); err != nil {
 			// fail early for secure handlers, removing the old error loop from above
@@ -245,7 +256,8 @@ func Run(cc schedulerserverconfig.CompletedConfig, stopCh <-chan struct{}, regis
 		<-ctx.Done()
 	}
 
-	ctx, cancel := context.WithCancel(context.TODO()) // TODO once Run() accepts a context, it should be used here
+	// TODO once Run() accepts a context, it should be used here
+	ctx, cancel := context.WithCancel(context.TODO()) 
 	defer cancel()
 
 	go func() {

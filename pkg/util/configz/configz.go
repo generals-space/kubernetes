@@ -51,8 +51,8 @@ var (
 	configs      = map[string]*Config{}
 )
 
-// Config is a handle to a ComponentConfig object. Don't create these directly;
-// use New() instead.
+// Config is a handle to a ComponentConfig object. 
+// Don't create these directly; use New() instead.
 type Config struct {
 	val interface{}
 }
