@@ -131,6 +131,8 @@ func splitHostIntPort(s string) (string, int, error) {
 
 func newDefaultComponentConfig() (*kubeschedulerconfig.KubeSchedulerConfiguration, error) {
 	cfgv1alpha1 := kubeschedulerconfigv1alpha1.KubeSchedulerConfiguration{}
+	// 这里的 Default() 应该是取的 pkg/scheduler/apis/config/v1alpha1/defaults.go
+	// 文件中的 SetDefaults_KubeSchedulerConfiguration() 中的设置值
 	kubeschedulerscheme.Scheme.Default(&cfgv1alpha1)
 	cfg := kubeschedulerconfig.KubeSchedulerConfiguration{}
 	if err := kubeschedulerscheme.Scheme.Convert(&cfgv1alpha1, &cfg, nil); err != nil {

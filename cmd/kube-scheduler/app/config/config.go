@@ -32,14 +32,18 @@ import (
 
 // Config has all the context to run a Scheduler
 type Config struct {
+	// ComponentConfig 成员的类型其实就是某种资源, 即 GVK 中的 K,
+	// 与 Statefulset, Deployment 等类似, 拥有自己的各种属性: meta 等.
 	// ComponentConfig is the scheduler server's configuration object.
 	ComponentConfig kubeschedulerconfig.KubeSchedulerConfiguration
 
 	// LoopbackClientConfig is a config for a privileged loopback connection
 	LoopbackClientConfig *restclient.Config
 
-	InsecureServing        *apiserver.DeprecatedInsecureServingInfo // nil will disable serving on an insecure port
-	InsecureMetricsServing *apiserver.DeprecatedInsecureServingInfo // non-nil if metrics should be served independently
+	// nil will disable serving on an insecure port
+	InsecureServing        *apiserver.DeprecatedInsecureServingInfo 
+	// non-nil if metrics should be served independently
+	InsecureMetricsServing *apiserver.DeprecatedInsecureServingInfo 
 	Authentication         apiserver.AuthenticationInfo
 	Authorization          apiserver.AuthorizationInfo
 	SecureServing          *apiserver.SecureServingInfo
@@ -70,7 +74,8 @@ type CompletedConfig struct {
 	*completedConfig
 }
 
-// Complete fills in any fields not set that are required to have valid data. It's mutating the receiver.
+// Complete fills in any fields not set that are required to have valid data.
+// It's mutating the receiver.
 func (c *Config) Complete() CompletedConfig {
 	cc := completedConfig{c}
 
@@ -81,7 +86,9 @@ func (c *Config) Complete() CompletedConfig {
 		c.InsecureMetricsServing.Name = "metrics"
 	}
 
-	apiserver.AuthorizeClientBearerToken(c.LoopbackClientConfig, &c.Authentication, &c.Authorization)
+	apiserver.AuthorizeClientBearerToken(
+		c.LoopbackClientConfig, &c.Authentication, &c.Authorization,
+	)
 
 	return CompletedConfig{&cc}
 }
